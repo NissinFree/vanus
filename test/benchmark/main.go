@@ -52,15 +52,17 @@ func main() {
 
 	rootCmd.AddCommand(command.E2ECommand())
 	rootCmd.AddCommand(command.ComponentCommand())
-	rootCmd.PersistentPreRun = func(_ *cobra.Command, _ []string) {
+	rootCmd.PersistentPreRun = func(cmd *cobra.Command, _ []string) {
 		if !caseNames[name] {
 			panic("invalid case name: " + name)
 		}
 		command.SetCaseName(name)
+		command.InitGatewayClient(cmd)
 		command.InitDatabase(redisAddr, fmt.Sprintf(defaultMongoDBURI, mongodbPass), begin, withMongoDB)
 	}
 	rootCmd.PersistentPostRun = func(_ *cobra.Command, _ []string) {
 		command.CloseDatabases(end)
+		command.DestroyGatewayClient()
 	}
 
 	rootCmd.PersistentFlags().StringVar(&endpoint, "endpoint",

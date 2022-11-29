@@ -31,7 +31,7 @@ import (
 
 	"github.com/HdrHistogram/hdrhistogram-go"
 	ce "github.com/cloudevents/sdk-go/v2"
-	"github.com/cloudevents/sdk-go/v2/client"
+	ceclient "github.com/cloudevents/sdk-go/v2/client"
 	"github.com/cloudevents/sdk-go/v2/protocol"
 	cehttp "github.com/cloudevents/sdk-go/v2/protocol/http"
 	"github.com/fatih/color"
@@ -80,7 +80,7 @@ func runCommand() *cobra.Command {
 		Use:   "run SUB-COMMAND",
 		Short: "vanus performance benchmark program",
 		Run: func(cmd *cobra.Command, args []string) {
-			endpoint := mustGetGatewayEndpoint(cmd)
+			endpoint := mustGetGatewayCloudEventsEndpoint(cmd)
 
 			if len(eventbusList) == 0 {
 				panic("eventbus list is empty")
@@ -243,7 +243,7 @@ func receiveCommand() *cobra.Command {
 				cmdFailedf(cmd, "init network error: %s", err)
 			}
 
-			c, err := client.NewHTTP(cehttp.WithListener(ls), cehttp.WithRequestDataAtContextMiddleware())
+			c, err := ceclient.NewHTTP(cehttp.WithListener(ls), cehttp.WithRequestDataAtContextMiddleware())
 			if err != nil {
 				cmdFailedf(cmd, "init ce http error: %s", err)
 			}
@@ -470,14 +470,6 @@ func analyseConsumption(ch <-chan *Record, f func(his *hdrhistogram.Histogram, u
 		}
 	}
 	f(his, "ms")
-}
-
-func mustGetGatewayEndpoint(cmd *cobra.Command) string {
-	endpoint, err := cmd.Flags().GetString("endpoint")
-	if err != nil {
-		cmdFailedf(cmd, "get gateway endpoint failed: %s", err)
-	}
-	return endpoint
 }
 
 var (

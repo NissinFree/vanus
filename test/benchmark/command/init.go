@@ -17,6 +17,13 @@ package command
 import (
 	"context"
 	"fmt"
+	"github.com/fatih/color"
+	proxypb "github.com/linkall-labs/vanus/proto/pkg/proxy"
+	"github.com/spf13/cobra"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/types/known/emptypb"
+	"strings"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -126,4 +133,53 @@ func CloseDatabases(end bool) {
 	if mgo != nil {
 		_ = mgo.Disconnect(context.Background())
 	}
+}
+
+var (
+	client proxypb.ControllerProxyClient
+	cc     *grpc.ClientConn
+)
+
+func InitGatewayClient(cmd *cobra.Command) {
+	endpoint, err := cmd.Flags().GetString("endpoint")
+	if err != nil {
+		cmdFailedf(cmd, "get gateway endpoint failed: %s", err)
+	}
+	opts := []grpc.DialOption{
+		grpc.WithBlock(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	conn, err := grpc.DialContext(ctx, endpoint, opts...)
+	if err != nil {
+		panic("failed to dial gateway: " + err.Error())
+	}
+	cc = conn
+	client = proxypb.NewControllerProxyClient(conn)
+}
+
+func DestroyGatewayClient() {
+	if cc != nil {
+		if err := cc.Close(); err != nil {
+			color.Yellow(fmt.Sprintf("close grpc connection error: %s", err.Error()))
+		}
+	}
+}
+
+func mustGetGatewayCloudEventsEndpoint(cmd *cobra.Command) string {
+	res, err := client.ClusterInfo(context.Background(), &emptypb.Empty{})
+	if err != nil {
+		cmdFailedf(cmd, "get cloudevents endpoint failed: %s", err)
+	}
+	sp := strings.Split(mustGetGatewayEndpoint(cmd), ":")
+	return fmt.Sprintf("%s:%d", sp[0], res.CloudeventsPort)
+}
+
+func mustGetGatewayEndpoint(cmd *cobra.Command) string {
+	endpoint, err := cmd.Flags().GetString("endpoint")
+	if err != nil {
+		cmdFailedf(cmd, "get gateway endpoint failed: %s", err)
+	}
+	return endpoint
 }
