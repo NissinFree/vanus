@@ -19,6 +19,7 @@ spec:
       containers:
         - image: linkall.tencentcloudcr.com/vanus/test-infra:dev
           imagePullPolicy: Always
+          command: ["bash", "-c", "sleep 10000"]
           name: vanus-bench-case1-c
           env:
             - name: CASE_NAME
