@@ -7,6 +7,7 @@ GO_VERSION=$(shell go version)
 export VANUS_LOG_LEVEL=debug
 
 DOCKER_REGISTRY ?= public.ecr.aws
+TARGET_REGISTRY ?= linkall.tencentcloudcr.com
 DOCKER_REPO ?= ${DOCKER_REGISTRY}/vanus
 IMAGE_TAG ?= ${GIT_COMMIT}
 #os linux or darwin
@@ -78,35 +79,20 @@ build-timer:
 controller-start:
 	go run ${VANUS_ROOT}/cmd/controller/main.go
 
-build-ctrl-bin:
-	$(GO_BUILD) -o bin/ctrl cmd/controller/main.go
-
-build-gw-util:
-	go build -o bin/gw-util test/gateway/main.go
-
 build-e2e:
 	go build -o bin/e2e test/e2e/quick-start/main.go
 
 build-destruct:
 	go build -o bin/destruct test/e2e/destruct/main.go
 
-controller-start:
-	go run ${VANUS_ROOT}/cmd/controller/${module}/main.go
-
-controller-api-test:
-	grpcui --import-path=${VSPROTO_ROOT}/include \
-           --import-path=${VSPROTO_ROOT}/proto \
-           --plaintext \
-           --proto=controller.proto 127.0.0.1:2048
-
-store-start:
-	go run ${VANUS_ROOT}/cmd/store/main.go
-
-store-api-test:
-	grpcui --import-path=${VSPROTO_ROOT}/include \
-           --import-path=${VSPROTO_ROOT}/proto \
-           --plaintext \
-           --proto=segment.proto 127.0.0.1:11831
-
-trigger-start:
-	go run ${VANUS_ROOT}/cmd/trigger/main.go
+docker-image-copy:
+	sh build/copy-image.sh ${DOCKER_REGISTRY} ${TARGET_REGISTRY}
+#	for loop in 1 2 3 4 5
+#	do
+#	echo "The value is: $loop"
+##	for $i in ${IMAGES[@]}; do
+##	  echo $i
+###	  docker pull ${DOCKER_REGISTRY}/vanus/controller:${IMAGE_TAG}
+###	  docker tag ${DOCKER_REGISTRY}/vanus/controller:${IMAGE_TAG} ${TARGET_REGISTRY}/vanus/controller:${IMAGE_TAG}
+###	  docker push ${TARGET_REGISTRY}/vanus/controller:${IMAGE_TAG}
+#	done
