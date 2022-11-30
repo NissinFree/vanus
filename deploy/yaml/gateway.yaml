@@ -51,7 +51,7 @@ spec:
     spec:
       containers:
         - name: gateway
-          image: linkall.tencentcloudcr.com/vanus/gateway:6ab13d6
+          image: linkall.tencentcloudcr.com/vanus/gateway:d37553e
           imagePullPolicy: IfNotPresent
           ports:
             - name: proxy

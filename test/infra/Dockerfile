@@ -19,5 +19,6 @@ RUN curl -O https://download.linkall.com/vsctl/v0.5.0/linux-amd64/vsctl && \
 RUN chmod a+x /usr/bin/vsctl
 RUN chmod a+x /usr/bin/vanus-bench
 RUN chmod a+x /vanus-bench/run.sh
+RUN sysctl -w net.ipv4.tcp_tw_recycle=1
 
 ENTRYPOINT ["/vanus-bench/run.sh"]

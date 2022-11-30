@@ -107,7 +107,15 @@ func runCommand() *cobra.Command {
 				})
 			}()
 
-			p, err := ce.NewHTTP()
+			ccc := http.Client{
+				Transport: &http.Transport{
+					MaxIdleConnsPerHost: 20,
+					MaxConnsPerHost:     1000,
+					IdleConnTimeout:     5 * time.Second,
+				},
+				Timeout: time.Second,
+			}
+			p, err := ce.NewHTTP(cehttp.WithClient(ccc))
 			if err != nil {
 				cmdFailedf(cmd, "init ce protocol error: %s\n", err)
 			}
