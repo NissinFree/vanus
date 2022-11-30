@@ -18,6 +18,7 @@ vanus-bench e2e analyse \
   --benchmark-type produce \
   --redis-addr "${REDIS_ADDR}" \
   --mongodb-password "${MONGODB_PASSWORD}" \
+  --endpoint "${VANUS_GATEWAY}" \
   --end
 
 vsctl eventbus delete --name "${JOB_NAME}"

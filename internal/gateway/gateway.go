@@ -17,14 +17,16 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"github.com/valyala/fasthttp"
+	"github.com/valyala/fasthttp/fasthttpadaptor"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
 
 	v2 "github.com/cloudevents/sdk-go/v2"
-	"github.com/cloudevents/sdk-go/v2/client"
-	"github.com/cloudevents/sdk-go/v2/protocol"
+	//"github.com/cloudevents/sdk-go/v2/client"
+	//"github.com/cloudevents/sdk-go/v2/protocol"
 	cehttp "github.com/cloudevents/sdk-go/v2/protocol/http"
 	"github.com/cloudevents/sdk-go/v2/types"
 	"github.com/google/uuid"
@@ -88,39 +90,51 @@ func (ga *ceGateway) Stop() {
 	}
 }
 
-func (ga *ceGateway) startCloudEventsReceiver(ctx context.Context) error {
-	ls, err := net.Listen("tcp", fmt.Sprintf(":%d", ga.config.GetCloudEventReceiverPort()))
+func (ga *ceGateway) ServeHTTP(res http.ResponseWriter, r *http.Request) {
+	event, err := cehttp.NewEventFromHTTPRequest(r)
 	if err != nil {
-		return err
+		http.Error(res, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		res.WriteHeader(http.StatusBadRequest)
+		_, _ = res.Write([]byte(cehttp.NewResult(http.StatusBadRequest,
+			fmt.Sprintf("failed to parse CloudEvent: %s", err.Error())).Error()))
+		return
 	}
-
-	c, err := client.NewHTTP(cehttp.WithListener(ls), cehttp.WithRequestDataAtContextMiddleware())
+	re, code, msg := ga.receive(context.Background(), event)
 	if err != nil {
-		return err
+		res.WriteHeader(code)
+		_, _ = res.Write([]byte(cehttp.NewResult(http.StatusBadRequest, msg).Error()))
 	}
+	res.WriteHeader(http.StatusOK)
+	d, _ := re.MarshalJSON()
+	_, _ = res.Write(d)
+}
 
-	ga.ceListener = ls
+func (ga *ceGateway) startCloudEventsReceiver(_ context.Context) error {
 	go func() {
-		if err := c.StartReceiver(ctx, ga.receive); err != nil {
+		err := fasthttp.ListenAndServe(
+			fmt.Sprintf(":%d", ga.config.GetCloudEventReceiverPort()),
+			fasthttpadaptor.NewFastHTTPHandler(ga),
+		)
+		if err != nil {
 			panic(fmt.Sprintf("start CloudEvents receiver failed: %s", err.Error()))
 		}
 	}()
 	return nil
 }
 
-func (ga *ceGateway) receive(ctx context.Context, event v2.Event) (*v2.Event, protocol.Result) {
+func (ga *ceGateway) receive(ctx context.Context, event *v2.Event) (*v2.Event, int, string) {
 	_ctx, span := ga.tracer.Start(ctx, "receive")
 	defer span.End()
 	ebName := getEventBusFromPath(requestDataFromContext(_ctx))
 
 	if ebName == "" {
-		return nil, v2.NewHTTPResult(http.StatusBadRequest, "invalid eventbus name")
+		return nil, http.StatusBadRequest, "invalid eventbus name"
 	}
 
 	extensions := event.Extensions()
 	err := checkExtension(extensions)
 	if err != nil {
-		return nil, v2.NewHTTPResult(http.StatusBadRequest, err.Error())
+		return nil, http.StatusBadRequest, err.Error()
 	}
 
 	event.SetExtension(primitive.XVanusEventbus, ebName)
@@ -131,7 +145,7 @@ func (ga *ceGateway) receive(ctx context.Context, event v2.Event) (*v2.Event, pr
 				log.KeyError: err,
 				"eventTime":  eventTime.(string),
 			})
-			return nil, v2.NewHTTPResult(http.StatusBadRequest, "invalid delivery time")
+			return nil, http.StatusBadRequest, "invalid delivery time"
 		}
 		ebName = primitive.TimerEventbusName
 	}
@@ -141,13 +155,13 @@ func (ga *ceGateway) receive(ctx context.Context, event v2.Event) (*v2.Event, pr
 		v, _ = ga.busWriter.LoadOrStore(ebName, ga.client.Eventbus(ctx, ebName).Writer())
 	}
 	writer, _ := v.(api.BusWriter)
-	eventID, err := writer.AppendOne(_ctx, &event)
+	eventID, err := writer.AppendOne(_ctx, event)
 	if err != nil {
 		log.Warning(_ctx, "append to failed", map[string]interface{}{
 			log.KeyError: err,
 			"eventbus":   ebName,
 		})
-		return nil, v2.NewHTTPResult(http.StatusInternalServerError, err.Error())
+		return nil, http.StatusInternalServerError, err.Error()
 	}
 	eventData := EventData{
 		BusName: ebName,
@@ -155,9 +169,9 @@ func (ga *ceGateway) receive(ctx context.Context, event v2.Event) (*v2.Event, pr
 	}
 	resEvent, err := createResponseEvent(eventData)
 	if err != nil {
-		return nil, v2.NewHTTPResult(http.StatusInternalServerError, err.Error())
+		return nil, http.StatusInternalServerError, err.Error()
 	}
-	return resEvent, v2.ResultACK
+	return resEvent, http.StatusOK, ""
 }
 
 func checkExtension(extensions map[string]interface{}) error {

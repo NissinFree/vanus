@@ -1,6 +1,7 @@
 #!/bin/bash
 
 kubectl apply -f benchmark.yml
+kubectl apply -f sc.yml
 kubectl apply -f vanus.yml
 kubectl apply -f secret.yml
 
@@ -9,6 +10,7 @@ kubectl apply -f case1/job.yml
 kubectl apply -f case2/job.yml
 
 kubectl delete -f vanus.yml
+kubectl delete -f sc.yml
 kubectl delete -f case1/job.yml
 kubectl delete -f case2/job.yml
 kubectl delete -f secret.yml

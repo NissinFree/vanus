@@ -523,7 +523,7 @@ func (a *appender) doAppend(ctx context.Context, frags ...block.Fragment) {
 	if len(frags) == 0 {
 		return
 	}
-	_, _ = a.raw.CommitAppend(ctx, frags...)
+	//_, _ = a.raw.CommitAppend(ctx, frags...)
 }
 
 func (a *appender) waitCommit(ctx context.Context, offset int64) error {

@@ -93,6 +93,7 @@ func runCommand() *cobra.Command {
 			// start
 			start := time.Now()
 			cnt := int64(0)
+			sent := int64(0)
 			go func() {
 				for atomic.LoadInt64(&cnt) < number {
 					for idx := 0; idx < len(eventbusList); idx++ {
@@ -132,6 +133,7 @@ func runCommand() *cobra.Command {
 							target = fmt.Sprintf("%s%s/gateway/%s", httpPrefix, endpoint, eb)
 						}
 						r, e := send(c, target)
+						atomic.AddInt64(&sent, 1)
 						if e != nil {
 							panic(e)
 						}
@@ -154,7 +156,8 @@ func runCommand() *cobra.Command {
 				defer func() {
 					tick.Stop()
 					tps := success - prev
-					log.Info(nil, fmt.Sprintf("Sent: %d, TPS: %d\n", success, tps), nil)
+					log.Info(nil, fmt.Sprintf("Success: %d, TPS: %d, Sent: %d\n", success, tps,
+						atomic.LoadInt64(&sent)), nil)
 					m[c] = int(tps)
 					wg2.Done()
 				}()
@@ -164,7 +167,8 @@ func runCommand() *cobra.Command {
 						cur := atomic.LoadInt64(&success)
 						tps := cur - prev
 						m[c] = int(tps)
-						log.Info(nil, fmt.Sprintf("Sent: %d, TPS: %d\n", cur, tps), nil)
+						log.Info(nil, fmt.Sprintf("Success: %d, TPS: %d, Sent: %d\n", success, tps,
+							atomic.LoadInt64(&sent)), nil)
 						prev = cur
 						c++
 					case <-ctx.Done():
@@ -216,20 +220,29 @@ func send(c ce.Client, target string) (bool, error) {
 	if err != nil {
 		return false, errors.New("failed to set data: " + err.Error())
 	}
+	start := time.Now()
+	defer func() {
+		end := time.Now()
+		if end.Sub(start) > time.Second {
+			fmt.Printf("send event too long: %v", end.Sub(start))
+		}
+	}()
 	res := c.Send(ctx, event)
 	if ce.IsUndelivered(res) {
 		return false, errors.New("failed to send: " + res.Error())
 	} else {
 		var httpResult *cehttp.Result
+
 		ce.ResultAs(res, &httpResult)
 		if httpResult != nil && httpResult.StatusCode == http.StatusOK {
 			r.SentAt = time.Now()
 			event.SetExtension(eventSentAt, time.Now())
 			cache(r, "send")
 		} else {
-			return false, nil
+			return false, fmt.Errorf(res.Error())
 		}
 	}
+
 	return true, nil
 }
 
