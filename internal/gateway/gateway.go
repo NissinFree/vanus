@@ -93,13 +93,26 @@ func (ga *ceGateway) Stop() {
 func (ga *ceGateway) ServeHTTP(res http.ResponseWriter, r *http.Request) {
 	event, err := cehttp.NewEventFromHTTPRequest(r)
 	if err != nil {
-		http.Error(res, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		res.WriteHeader(http.StatusBadRequest)
 		_, _ = res.Write([]byte(cehttp.NewResult(http.StatusBadRequest,
 			fmt.Sprintf("failed to parse CloudEvent: %s", err.Error())).Error()))
 		return
 	}
-	re, code, msg := ga.receive(context.Background(), event)
+	reqPathStr := r.URL.String()
+	ebName := ""
+
+	if strings.HasPrefix(reqPathStr, httpRequestPrefix) {
+		ebName = strings.TrimLeft(reqPathStr[len(httpRequestPrefix):], "/")
+	}
+
+	if ebName == "" {
+		res.WriteHeader(http.StatusBadRequest)
+		_, _ = res.Write([]byte(cehttp.NewResult(http.StatusBadRequest,
+			"invalid eventbus name").Error()))
+		return
+	}
+
+	re, code, msg := ga.receive(context.Background(), ebName, event)
 	if err != nil {
 		res.WriteHeader(code)
 		_, _ = res.Write([]byte(cehttp.NewResult(http.StatusBadRequest, msg).Error()))
@@ -122,14 +135,9 @@ func (ga *ceGateway) startCloudEventsReceiver(_ context.Context) error {
 	return nil
 }
 
-func (ga *ceGateway) receive(ctx context.Context, event *v2.Event) (*v2.Event, int, string) {
+func (ga *ceGateway) receive(ctx context.Context, ebName string, event *v2.Event) (*v2.Event, int, string) {
 	_ctx, span := ga.tracer.Start(ctx, "receive")
 	defer span.End()
-	ebName := getEventBusFromPath(requestDataFromContext(_ctx))
-
-	if ebName == "" {
-		return nil, http.StatusBadRequest, "invalid eventbus name"
-	}
 
 	extensions := event.Extensions()
 	err := checkExtension(extensions)
