@@ -17,6 +17,7 @@ package command
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -76,8 +77,15 @@ func mustGetGatewayCloudEventsEndpoint(cmd *cobra.Command) string {
 	if err != nil {
 		cmdFailedf(cmd, "get cloudevents endpoint failed: %s", err)
 	}
+
+	// compatible with minikube
 	sp := strings.Split(mustGetGatewayEndpoint(cmd), ":")
-	return fmt.Sprintf("%s:%d", sp[0], res.CloudeventsPort)
+	proxyPort, _ := strconv.ParseInt(sp[1], 10, 64)
+	port := proxyPort + 1
+	if proxyPort == res.ProxyPort {
+		port = res.CloudeventsPort
+	}
+	return fmt.Sprintf("%s:%d", sp[0], port)
 }
 
 func mustGetGatewayEndpoint(cmd *cobra.Command) string {
