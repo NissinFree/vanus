@@ -1,9 +1,4 @@
 apiVersion: v1
-kind: Namespace
-metadata:
-  name: vanus
----
-apiVersion: v1
 data:
   controller.yaml: |-
     node_id: ${NODE_ID}
@@ -74,6 +69,7 @@ data:
           engine: psync
     raft:
       wal:
+        block_size: 65536
         io:
           engine: psync
 kind: ConfigMap
@@ -141,18 +137,14 @@ metadata:
   namespace: vanus
 spec:
   ports:
-    - name: put
+    - name: proxy
       nodePort: 30001
       port: 8080
       targetPort: 8080
-    - name: get
+    - name: cloudevents
       nodePort: 30002
       port: 8081
       targetPort: 8081
-    - name: ctrl-proxy
-      nodePort: 30003
-      port: 8082
-      targetPort: 8082
   selector:
     app: vanus-gateway
   type: NodePort
@@ -177,16 +169,21 @@ spec:
         app: vanus-gateway
     spec:
       containers:
-        - image: linkall.tencentcloudcr.com/vanus/gateway:dev
-          imagePullPolicy: IfNotPresent
+        - image: linkall.tencentcloudcr.com/vanus/gateway:dev1
+          resources:
+            requests:
+              memory: "4096Mi"
+              cpu: "2000m"
+            limits:
+              memory: "4096Mi"
+              cpu: "2000m"
+          imagePullPolicy: Always
           name: gateway
           ports:
             - containerPort: 8080
-              name: httpput
+              name: proxy
             - containerPort: 8081
-              name: httpget
-            - containerPort: 8082
-              name: ctrl-proxy
+              name: cloudevents
           volumeMounts:
             - mountPath: /vanus/config
               name: config-gateway
@@ -222,8 +219,8 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
-          image: linkall.tencentcloudcr.com/vanus/timer:dev
-          imagePullPolicy: IfNotPresent
+          image: linkall.tencentcloudcr.com/vanus/timer:v0.5.0
+          imagePullPolicy: Always
           name: timer
           volumeMounts:
             - mountPath: /vanus/config
@@ -241,7 +238,7 @@ metadata:
   name: vanus-trigger
   namespace: vanus
 spec:
-  replicas: 1
+  replicas: 3
   selector:
     matchLabels:
       app: vanus-trigger
@@ -260,8 +257,15 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
-          image: linkall.tencentcloudcr.com/vanus/trigger:dev
-          imagePullPolicy: IfNotPresent
+          image: linkall.tencentcloudcr.com/vanus/trigger:v0.5.0
+          resources:
+            requests:
+              memory: "4096Mi"
+              cpu: "2000m"
+            limits:
+              memory: "4096Mi"
+              cpu: "2000m"
+          imagePullPolicy: Always
           name: trigger
           ports:
             - containerPort: 2148
@@ -310,8 +314,15 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
-          image: linkall.tencentcloudcr.com/vanus/controller:dev
-          imagePullPolicy: IfNotPresent
+          image: linkall.tencentcloudcr.com/vanus/controller:v0.5.0
+          resources:
+            requests:
+              memory: "2048Mi"
+              cpu: "1000m"
+            limits:
+              memory: "2048Mi"
+              cpu: "1000m"
+          imagePullPolicy: Always
           name: controller
           ports:
             - containerPort: 2048
@@ -339,10 +350,10 @@ spec:
       spec:
         accessModes:
           - ReadWriteOnce
-        storageClassName: ssd
+        storageClassName: local-storage
         resources:
           requests:
-            storage: 20Gi
+            storage: 50Gi
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -352,7 +363,7 @@ metadata:
   name: vanus-store
   namespace: vanus
 spec:
-  replicas: 3
+  replicas: 4
   selector:
     matchLabels:
       app: vanus-store
@@ -376,8 +387,15 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
-          image: linkall.tencentcloudcr.com/vanus/store:dev
-          imagePullPolicy: IfNotPresent
+          image: linkall.tencentcloudcr.com/vanus/store:v0.5.0
+          resources:
+            requests:
+              memory: "8192Mi"
+              cpu: "4000m"
+            limits:
+              memory: "8192Mi"
+              cpu: "4000m"
+          imagePullPolicy: Always
           name: store
           ports:
             - containerPort: 11811
@@ -399,7 +417,7 @@ spec:
       spec:
         accessModes:
           - ReadWriteOnce
-        storageClassName: ssd
+        storageClassName: local-storage
         resources:
           requests:
-            storage: 20Gi
+            storage: 500Gi

@@ -1,7 +1,8 @@
-FROM --platform=$BUILDPLATFORM golang:1.18 as builder
+FROM golang:1.18 as builder
 WORKDIR /workspace
 
 COPY . .
+WORKDIR /workspace/vanus
 RUN go mod download
 
 ARG TARGETOS

@@ -5,11 +5,14 @@ go 1.18
 require (
 	cloudevents.io/genproto v1.0.2
 	github.com/HdrHistogram/hdrhistogram-go v1.1.2
+	github.com/Jeffail/tunny v0.1.4
 	github.com/aws/aws-sdk-go-v2 v1.16.11
 	github.com/aws/aws-sdk-go-v2/credentials v1.12.13
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.23.8
+	github.com/cloudevents/sdk-go/binding/format/protobuf/v2 v2.12.0
+	github.com/cloudevents/sdk-go/protocol/grpc/v2 v2.12.0
 	github.com/cloudevents/sdk-go/sql/v2 v2.10.1
-	github.com/cloudevents/sdk-go/v2 v2.11.0
+	github.com/cloudevents/sdk-go/v2 v2.12.0
 	github.com/fatih/color v1.13.0
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/go-resty/resty/v2 v2.7.0
@@ -46,15 +49,15 @@ require (
 	go.uber.org/atomic v1.9.0
 	go.uber.org/ratelimit v0.2.0
 	golang.org/x/time v0.0.0-20220210224613-90d013bbcef8
-	google.golang.org/grpc v1.50.1
+	google.golang.org/api v0.102.0
+	google.golang.org/genproto v0.0.0-20221027153422-115e99e71e1c
+	google.golang.org/grpc v1.51.0
 	google.golang.org/protobuf v1.28.1
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/apimachinery v0.25.0
 	k8s.io/client-go v0.25.0
 	k8s.io/klog/v2 v2.80.0
 	k8s.io/utils v0.0.0-20220728103510-ee6ede2d64ed
-	google.golang.org/api v0.102.0
-	google.golang.org/genproto v0.0.0-20221027153422-115e99e71e1c
 )
 
 require (
@@ -149,6 +152,7 @@ require (
 
 replace (
 	cloudevents.io/genproto => ./proto/include/cloudevents/pkg
+	github.com/cloudevents/sdk-go/protocol/grpc/v2 => ../../github/sdk-go/protocol/grpc/v2
 	github.com/linkall-labs/vanus/client => ./client
 	github.com/linkall-labs/vanus/observability => ./observability
 	github.com/linkall-labs/vanus/pkg => ./pkg

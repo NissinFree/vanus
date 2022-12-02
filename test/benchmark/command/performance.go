@@ -39,6 +39,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/jedib0t/go-pretty/v6/text"
+	vp "github.com/linkall-labs/vanus/internal/primitive"
 	"github.com/linkall-labs/vanus/observability/log"
 	"github.com/spf13/cobra"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -106,11 +107,14 @@ func runCommand() *cobra.Command {
 				})
 			}()
 
-			p, err := ce.NewHTTP()
+			//sender, err := gpb.NewGRPCTransport(mustGetGatewayEndpoint(cmd))
+			sender, err := ce.NewHTTP()
+
 			if err != nil {
-				cmdFailedf(cmd, "init ce protocol error: %s\n", err)
+				cmdFailedf(cmd, "failed to init grpc transport: %s\n", err)
 			}
-			c, err := ce.NewClient(p, ce.WithTimeNow(), ce.WithUUIDs())
+
+			c, err := ce.NewClient(sender, ce.WithTimeNow(), ce.WithUUIDs())
 			if err != nil {
 				cmdFailedf(cmd, "create ce client error: %s\n", err)
 			}
@@ -131,7 +135,9 @@ func runCommand() *cobra.Command {
 						} else {
 							target = fmt.Sprintf("%s%s/gateway/%s", httpPrefix, endpoint, eb)
 						}
-						r, e := send(c, target)
+						//start := time.Now()
+						r, e := send(c, target, eb)
+						//fmt.Println(time.Now().Sub(start))
 						if e != nil {
 							panic(e)
 						}
@@ -200,7 +206,7 @@ func getTPSKey(t string) string {
 	return path.Join(redisKey, fmt.Sprintf("tps-%s", t), getBenchmarkID())
 }
 
-func send(c ce.Client, target string) (bool, error) {
+func send(c ce.Client, target, eb string) (bool, error) {
 	ctx := ce.ContextWithTarget(context.Background(), target)
 	r := &Record{
 		BornAt: time.Now(),
@@ -211,14 +217,20 @@ func send(c ce.Client, target string) (bool, error) {
 	event.SetSource("performance.benchmark.vanus")
 	event.SetType("performance.benchmark.vanus")
 	event.SetTime(r.BornAt)
+	event.SetExtension(vp.XVanusEventbus, eb)
 
-	err := event.SetData(ce.ApplicationJSON, genData())
+	err := event.SetData(ce.ApplicationJSON, payload)
 	if err != nil {
 		return false, errors.New("failed to set data: " + err.Error())
 	}
+
 	res := c.Send(ctx, event)
 	if ce.IsUndelivered(res) {
 		return false, errors.New("failed to send: " + res.Error())
+	} else if protocol.IsACK(res) {
+		r.SentAt = time.Now()
+		event.SetExtension(eventSentAt, time.Now())
+		cache(r, "send")
 	} else {
 		var httpResult *cehttp.Result
 		ce.ResultAs(res, &httpResult)
@@ -480,24 +492,8 @@ func mustGetGatewayEndpoint(cmd *cobra.Command) string {
 	return endpoint
 }
 
-var (
-	once = sync.Once{}
-	ch   = make(chan map[string]interface{}, 512)
-)
-
-func genData() map[string]interface{} {
-	once.Do(func() {
-		go func() {
-			rd := rand.New(rand.NewSource(time.Now().UnixNano()))
-			for {
-				m := map[string]interface{}{
-					"data": genStr(rd, payloadSize),
-				}
-				ch <- m
-			}
-		}()
-	})
-	return <-ch
+var payload = map[string]interface{}{
+	"data": genStr(rd, payloadSize),
 }
 
 func genStr(rd *rand.Rand, size int) string {

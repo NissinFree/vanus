@@ -261,6 +261,7 @@ func sendCommand() *cobra.Command {
 				for idx := 0; idx < parallelism; idx++ {
 					go func(br BlockRecord, c segpb.SegmentServerClient) {
 						for atomic.LoadInt64(&count)+atomic.LoadInt64(&failed) < totalSent {
+
 							_, err := c.AppendToBlock(context.Background(), &segpb.AppendToBlockRequest{
 								BlockId: br.LeaderID,
 								Events:  &v1.CloudEventBatch{Events: generateEvents()},

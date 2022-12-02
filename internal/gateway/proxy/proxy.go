@@ -20,10 +20,15 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/Jeffail/tunny"
+	format "github.com/cloudevents/sdk-go/binding/format/protobuf/v2"
+	"github.com/linkall-labs/vanus/internal/gateway/client"
 	"net"
+	"net/http"
 	"runtime/debug"
 	"sync"
 
+	gpb "github.com/cloudevents/sdk-go/protocol/grpc/v2/pb"
 	recovery "github.com/grpc-ecosystem/go-grpc-middleware/recovery"
 	eb "github.com/linkall-labs/vanus/client"
 	"github.com/linkall-labs/vanus/client/pkg/api"
@@ -63,6 +68,11 @@ type Config struct {
 	GRPCReflectionEnable   bool
 }
 
+var (
+	_ proxypb.ControllerProxyServer = &ControllerProxy{}
+	_ gpb.CloudEventsServiceServer  = &ControllerProxy{}
+)
+
 type ControllerProxy struct {
 	cfg          Config
 	tracer       *tracing.Tracer
@@ -71,16 +81,22 @@ type ControllerProxy struct {
 	eventlogCtrl ctrlpb.EventLogControllerClient
 	triggerCtrl  ctrlpb.TriggerControllerClient
 	grpcSrv      *grpc.Server
+	cli          *client.Client
+	ch           chan struct{}
+	s            gpb.CloudEventsService_SendServer
+	pool         *tunny.Pool
 }
 
-func NewControllerProxy(cfg Config) *ControllerProxy {
+func NewControllerProxy(cfg Config, cli *client.Client) *ControllerProxy {
 	return &ControllerProxy{
 		cfg:          cfg,
+		cli:          cli,
 		client:       eb.Connect(cfg.Endpoints),
 		tracer:       tracing.NewTracer("controller-proxy", trace.SpanKindServer),
 		eventbusCtrl: controller.NewEventbusClient(cfg.Endpoints, cfg.Credentials),
 		eventlogCtrl: controller.NewEventlogClient(cfg.Endpoints, cfg.Credentials),
 		triggerCtrl:  controller.NewTriggerClient(cfg.Endpoints, cfg.Credentials),
+		ch:           make(chan struct{}, 2048),
 	}
 }
 
@@ -114,7 +130,7 @@ func (cp *ControllerProxy) Start() error {
 	}
 
 	proxypb.RegisterControllerProxyServer(cp.grpcSrv, cp)
-
+	gpb.RegisterCloudEventsServiceServer(cp.grpcSrv, cp)
 	listen, err := net.Listen("tcp", fmt.Sprintf(":%d", cp.cfg.ProxyPort))
 	if err != nil {
 		return err
@@ -129,6 +145,14 @@ func (cp *ControllerProxy) Start() error {
 		}
 		wg.Done()
 	}()
+	cp.pool = tunny.NewFunc(16, func(payload interface{}) interface{} {
+		var result []byte
+
+		// TODO: Something CPU heavy with payload
+
+		return result
+	})
+	go cp.receive()
 	log.Info(context.Background(), "the grpc proxy ready to work", nil)
 	return nil
 }
@@ -268,4 +292,56 @@ func decodeEventID(eventID string) (uint64, int64, error) {
 	logID := binary.BigEndian.Uint64(decoded[0:8])
 	off := binary.BigEndian.Uint64(decoded[8:16])
 	return logID, int64(off), nil
+}
+
+func (cp *ControllerProxy) Send(s gpb.CloudEventsService_SendServer) error {
+	cp.s = s
+
+	for {
+		r, err := s.Recv()
+		if err != nil {
+			log.Info(nil, err.Error(), nil)
+			break
+		}
+
+		cp.ch <- struct{}{}
+		go func(req *gpb.CloudEventBatch) {
+			e, err := format.FromProto(req.Events[0])
+			if err != nil {
+				_ = cp.s.Send(&gpb.SendResponse{
+					Status:    http.StatusInternalServerError,
+					Message:   err.Error(),
+					RequestId: req.RequestId,
+				})
+				return
+			}
+			_, err = cp.cli.Send(context.Background(), e)
+			if err != nil {
+				_ = cp.s.Send(&gpb.SendResponse{
+					Status:    http.StatusInternalServerError,
+					Message:   err.Error(),
+					RequestId: req.RequestId,
+				})
+				return
+			}
+			_ = cp.s.Send(&gpb.SendResponse{
+				Status:    http.StatusOK,
+				RequestId: req.RequestId,
+			})
+			<-cp.ch
+		}(r)
+	}
+	return nil
+}
+
+func (cp *ControllerProxy) receive() {
+	//for {
+	//	for r := range cp.ch {
+	//
+	//	}
+	//}
+}
+
+func (cp *ControllerProxy) process(in interface{}) interface{} {
+	return nil
 }

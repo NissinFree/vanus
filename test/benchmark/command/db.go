@@ -77,7 +77,7 @@ func InitDatabase(redisAddr string, mongodb string, begin bool, withoutMongoDB b
 
 	if begin {
 		if len(tasks) != 0 {
-			panic(fmt.Sprintf("invalid taks numbers: %d", len(tasks)))
+			//panic(fmt.Sprintf("invalid taks numbers: %d", len(tasks)))
 		}
 		t := &Task{
 			ID:       primitive.NewObjectID(),

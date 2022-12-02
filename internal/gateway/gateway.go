@@ -20,16 +20,13 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"sync"
 
 	v2 "github.com/cloudevents/sdk-go/v2"
 	"github.com/cloudevents/sdk-go/v2/client"
 	"github.com/cloudevents/sdk-go/v2/protocol"
 	cehttp "github.com/cloudevents/sdk-go/v2/protocol/http"
-	"github.com/cloudevents/sdk-go/v2/types"
 	"github.com/google/uuid"
-	eb "github.com/linkall-labs/vanus/client"
-	"github.com/linkall-labs/vanus/client/pkg/api"
+	vclient "github.com/linkall-labs/vanus/internal/gateway/client"
 	"github.com/linkall-labs/vanus/internal/gateway/proxy"
 	"github.com/linkall-labs/vanus/internal/primitive"
 	"github.com/linkall-labs/vanus/observability/log"
@@ -51,22 +48,21 @@ type EventData struct {
 }
 
 type ceGateway struct {
-	// ceClient  v2.Client
-	busWriter  sync.Map
+	cli        *vclient.Client
 	config     Config
-	client     eb.Client
 	proxySrv   *proxy.ControllerProxy
 	tracer     *tracing.Tracer
 	ceListener net.Listener
 }
 
 func NewGateway(config Config) *ceGateway {
-	return &ceGateway{
-		config:   config,
-		client:   eb.Connect(config.ControllerAddr),
-		proxySrv: proxy.NewControllerProxy(config.GetProxyConfig()),
-		tracer:   tracing.NewTracer("cloudevents", trace.SpanKindServer),
+	ga := &ceGateway{
+		config: config,
+		cli:    vclient.NewClient(config.ControllerAddr...),
+		tracer: tracing.NewTracer("cloudevents", trace.SpanKindServer),
 	}
+	ga.proxySrv = proxy.NewControllerProxy(config.GetProxyConfig(), ga.cli)
+	return ga
 }
 
 func (ga *ceGateway) Start(ctx context.Context) error {
@@ -124,24 +120,7 @@ func (ga *ceGateway) receive(ctx context.Context, event v2.Event) (*v2.Event, pr
 	}
 
 	event.SetExtension(primitive.XVanusEventbus, ebName)
-	if eventTime, ok := extensions[primitive.XVanusDeliveryTime]; ok {
-		// validate event time
-		if _, err := types.ParseTime(eventTime.(string)); err != nil {
-			log.Error(_ctx, "invalid format of event time", map[string]interface{}{
-				log.KeyError: err,
-				"eventTime":  eventTime.(string),
-			})
-			return nil, v2.NewHTTPResult(http.StatusBadRequest, "invalid delivery time")
-		}
-		ebName = primitive.TimerEventbusName
-	}
-
-	v, exist := ga.busWriter.Load(ebName)
-	if !exist {
-		v, _ = ga.busWriter.LoadOrStore(ebName, ga.client.Eventbus(ctx, ebName).Writer())
-	}
-	writer, _ := v.(api.BusWriter)
-	eventID, err := writer.AppendOne(_ctx, &event)
+	eventID, err := ga.cli.Send(_ctx, &event)
 	if err != nil {
 		log.Warning(_ctx, "append to failed", map[string]interface{}{
 			log.KeyError: err,
@@ -149,6 +128,7 @@ func (ga *ceGateway) receive(ctx context.Context, event v2.Event) (*v2.Event, pr
 		})
 		return nil, v2.NewHTTPResult(http.StatusInternalServerError, err.Error())
 	}
+
 	eventData := EventData{
 		BusName: ebName,
 		EventID: eventID,
