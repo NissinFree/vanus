@@ -24,12 +24,14 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/HdrHistogram/hdrhistogram-go"
+	gpb "github.com/cloudevents/sdk-go/protocol/grpc/v2"
 	ce "github.com/cloudevents/sdk-go/v2"
 	"github.com/cloudevents/sdk-go/v2/client"
 	"github.com/cloudevents/sdk-go/v2/protocol"
@@ -81,7 +83,7 @@ func runCommand() *cobra.Command {
 		Use:   "run SUB-COMMAND",
 		Short: "vanus performance benchmark program",
 		Run: func(cmd *cobra.Command, args []string) {
-			endpoint := mustGetGatewayEndpoint(cmd)
+			endpoint := mustGetGatewayCloudEventsEndpoint(cmd)
 
 			if len(eventbusList) == 0 {
 				panic("eventbus list is empty")
@@ -107,8 +109,8 @@ func runCommand() *cobra.Command {
 				})
 			}()
 
-			//sender, err := gpb.NewGRPCTransport(mustGetGatewayEndpoint(cmd))
-			sender, err := ce.NewHTTP()
+			sender, err := gpb.NewGRPCTransport(mustGetGatewayEndpoint(cmd))
+			//sender, err := ce.NewHTTP()
 
 			if err != nil {
 				cmdFailedf(cmd, "failed to init grpc transport: %s\n", err)
@@ -219,7 +221,7 @@ func send(c ce.Client, target, eb string) (bool, error) {
 	event.SetTime(r.BornAt)
 	event.SetExtension(vp.XVanusEventbus, eb)
 
-	err := event.SetData(ce.ApplicationJSON, payload)
+	err := event.SetData(ce.ApplicationJSON, m)
 	if err != nil {
 		return false, errors.New("failed to set data: " + err.Error())
 	}
@@ -239,7 +241,7 @@ func send(c ce.Client, target, eb string) (bool, error) {
 			event.SetExtension(eventSentAt, time.Now())
 			cache(r, "send")
 		} else {
-			return false, nil
+			return false, errors.New(res.Error())
 		}
 	}
 	return true, nil
@@ -492,8 +494,14 @@ func mustGetGatewayEndpoint(cmd *cobra.Command) string {
 	return endpoint
 }
 
-var payload = map[string]interface{}{
-	"data": genStr(rd, payloadSize),
+func mustGetGatewayCloudEventsEndpoint(cmd *cobra.Command) string {
+	sp := strings.Split(mustGetGatewayEndpoint(cmd), ":")
+	port, _ := strconv.ParseInt(sp[1], 10, 64)
+	return fmt.Sprintf("%s:%d", sp[0], port+1)
+}
+
+var m = map[string]interface{}{
+	"data": genStr(rd, 1024),
 }
 
 func genStr(rd *rand.Rand, size int) string {

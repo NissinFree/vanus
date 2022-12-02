@@ -3,14 +3,13 @@ package client
 import (
 	"context"
 	"errors"
-	"sync"
-	"time"
-
 	v2 "github.com/cloudevents/sdk-go/v2"
 	"github.com/cloudevents/sdk-go/v2/types"
 	eb "github.com/linkall-labs/vanus/client"
+	"github.com/linkall-labs/vanus/client/pkg/api"
 	"github.com/linkall-labs/vanus/internal/primitive"
 	"github.com/linkall-labs/vanus/observability/log"
+	"sync"
 )
 
 type Client struct {
@@ -40,19 +39,18 @@ func (ga *Client) Send(ctx context.Context, event *v2.Event) (string, error) {
 	}
 
 	// TODO remove
-	_, exist := ga.busWriter.Load(ebName)
+	v, exist := ga.busWriter.Load(ebName)
 	if !exist {
-		_, _ = ga.busWriter.LoadOrStore(ebName, ga.client.Eventbus(ctx, ebName).Writer())
+		v, _ = ga.busWriter.LoadOrStore(ebName, ga.client.Eventbus(ctx, ebName).Writer())
 	}
-	time.Sleep(time.Millisecond)
-	//writer, _ := v.(api.BusWriter)
-	//eventID, err := writer.AppendOne(ctx, event)
-	//if err != nil {
-	//	log.Warning(ctx, "append to failed", map[string]interface{}{
-	//		log.KeyError: err,
-	//		"eventbus":   ebName,
-	//	})
-	//	return "", err
-	//}
-	return "", nil
+	writer, _ := v.(api.BusWriter)
+	eventID, err := writer.AppendOne(ctx, event)
+	if err != nil {
+		log.Warning(ctx, "append to failed", map[string]interface{}{
+			log.KeyError: err,
+			"eventbus":   ebName,
+		})
+		return "", err
+	}
+	return eventID, nil
 }

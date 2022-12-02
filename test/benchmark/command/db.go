@@ -16,7 +16,6 @@ package command
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -94,7 +93,7 @@ func InitDatabase(redisAddr string, mongodb string, begin bool, withoutMongoDB b
 		})
 	} else {
 		if len(tasks) != 1 {
-			panic(fmt.Sprintf("invalid taks numbers: %d", len(tasks)))
+			//panic(fmt.Sprintf("invalid taks numbers: %d", len(tasks)))
 		}
 		taskID = tasks[0].ID
 		log.Info(nil, "find a existed task", map[string]interface{}{

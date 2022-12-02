@@ -145,7 +145,9 @@ func checkExtension(extensions map[string]interface{}) error {
 		return nil
 	}
 	for name := range extensions {
-		if name == primitive.XVanusDeliveryTime {
+		if name == primitive.XVanusDeliveryTime ||
+			name == primitive.XVanusEventbus ||
+			name == primitive.XVanusRetryAttempts {
 			continue
 		}
 		// event attribute can not prefix with vanus system use
