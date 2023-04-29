@@ -1,0 +1,57 @@
+"```python
+import numpy as np
+
+class AdvancedMatrixCalculator:
+    def __init__(self, matrix_A, matrix_B):
+        self.A = np.array(matrix_A)
+        self.B = np.array(matrix_B)
+
+    def add_matrices(self):
+        return np.add(self.A, self.B)
+
+    def subtract_matrices(self):
+        return np.subtract(self.A, self.B)
+
+    def matmul(self):
+        return np.matmul(self.A, self.B)
+
+    def determinant(self, matrix):
+        return np.linalg.det(matrix)
+
+    def inverse(self, matrix):
+        return np.linalg.inv(matrix)
+
+    def singular_values(self, matrix):
+        return np.linalg.svd(matrix, compute_uv=False)
+
+    def eigensystem(self, matrix):
+        return np.linalg.eig(matrix)
+
+    def is_positive_definite(self, matrix):
+        return np.all(np.linalg.eigvals(matrix) > 0)
+
+if __name__ == ""__main__"":
+    matrix_C = [[1, 2], [3, 4]]
+    matrix_D = [[4, 3], [2, 1]]
+    
+    calculator = AdvancedMatrixCalculator(matrix_C, matrix_D)
+    print(""Matrix addition result:"")
+    print(calculator.add_matrices())
+    print(""\nMatrix subtraction result:"")
+    print(calculator.subtract_matrices())
+    print(""\nMatrix multiplication result:"")
+    print(calculator.matmul())
+    print(""\nDeterminant of Matrix C:"")
+    print(calculator.determinant(matrix_C))
+    print(""\nInverse of Matrix C:"")
+    print(calculator.inverse(matrix_C))
+    print(""\nSingular values of Matrix C:"")
+    print(calculator.singular_values(matrix_C))
+    print(""\nEigensystem of Matrix C:"")
+    eigvals, eigvecs = calculator.eigensystem(matrix_C)
+    print(""Eigenvalues:"", eigvals)
+    print(""Eigenvectors:"")
+    print(eigvecs)
+    print(""\nMatrix C is positive definite?"")
+    print(calculator.is_positive_definite(matrix_C))
+```"
