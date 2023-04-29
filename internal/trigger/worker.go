@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:generate mockgen -source=worker.go  -destination=mock_worker.go -package=trigger
+//go:generate mockgen -source=worker.go -destination=mock_worker.go -package=trigger
 package trigger
 
 import (
@@ -21,17 +21,19 @@ import (
 	"sync"
 	"time"
 
-	"github.com/linkall-labs/vanus/internal/convert"
-	"github.com/linkall-labs/vanus/internal/primitive"
-	"github.com/linkall-labs/vanus/internal/primitive/vanus"
-	"github.com/linkall-labs/vanus/internal/trigger/trigger"
-	"github.com/linkall-labs/vanus/observability/log"
-	"github.com/linkall-labs/vanus/observability/metrics"
-	"github.com/linkall-labs/vanus/pkg/cluster"
-	"github.com/linkall-labs/vanus/pkg/errors"
-	ctrlpb "github.com/linkall-labs/vanus/proto/pkg/controller"
-	metapb "github.com/linkall-labs/vanus/proto/pkg/meta"
 	"google.golang.org/grpc/credentials/insecure"
+
+	"github.com/vanus-labs/vanus/observability/log"
+	"github.com/vanus-labs/vanus/observability/metrics"
+	"github.com/vanus-labs/vanus/pkg/cluster"
+	"github.com/vanus-labs/vanus/pkg/errors"
+	ctrlpb "github.com/vanus-labs/vanus/proto/pkg/controller"
+	metapb "github.com/vanus-labs/vanus/proto/pkg/meta"
+
+	"github.com/vanus-labs/vanus/internal/convert"
+	"github.com/vanus-labs/vanus/internal/primitive"
+	"github.com/vanus-labs/vanus/internal/primitive/vanus"
+	"github.com/vanus-labs/vanus/internal/trigger/trigger"
 )
 
 type Worker interface {
@@ -101,7 +103,7 @@ func (w *worker) deleteTrigger(id vanus.ID) {
 	delete(w.triggerMap, id)
 }
 
-func (w *worker) Init(ctx context.Context) error {
+func (w *worker) Init(_ context.Context) error {
 	err := w.ctrl.WaitForControllerReady(false)
 	return err
 }
@@ -120,7 +122,7 @@ func (w *worker) Unregister(ctx context.Context) error {
 	return err
 }
 
-func (w *worker) Start(ctx context.Context) error {
+func (w *worker) Start(_ context.Context) error {
 	return w.startHeartbeat(w.ctx)
 }
 
@@ -139,9 +141,7 @@ func (w *worker) Stop(ctx context.Context) error {
 	// commit offset
 	err := w.commitOffsets(ctx)
 	if err != nil {
-		log.Error(ctx, "commit offsets error", map[string]interface{}{
-			log.KeyError: err,
-		})
+		log.Error(ctx).Err(err).Msg("commit offsets error")
 	}
 	// stop heartbeat
 	w.stop()
@@ -254,8 +254,7 @@ func (w *worker) getTriggerOptions(subscription *primitive.Subscription) []trigg
 	opts = append(opts, trigger.WithRateLimit(config.RateLimit),
 		trigger.WithDeliveryTimeout(config.DeliveryTimeout),
 		trigger.WithMaxRetryAttempts(config.GetMaxRetryAttempts()),
-		trigger.WithRetry(subscription.EventBus),
-		trigger.WithDeadLetter(subscription.EventBus, config.DisableDeadLetter),
+		trigger.WithDisableDeadLetter(config.DisableDeadLetter),
 		trigger.WithOrdered(config.OrderedEvent),
 		trigger.WithGoroutineSize(w.config.SendEventGoroutineSize),
 		trigger.WithSendBatchSize(w.config.SendEventBatchSize),

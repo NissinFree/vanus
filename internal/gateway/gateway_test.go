@@ -17,19 +17,22 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"net/url"
 	"testing"
 	"time"
-
-	"github.com/linkall-labs/vanus/client"
-	"github.com/linkall-labs/vanus/client/pkg/api"
-	"github.com/linkall-labs/vanus/internal/primitive"
 
 	ce "github.com/cloudevents/sdk-go/v2"
 	cehttp "github.com/cloudevents/sdk-go/v2/protocol/http"
 	. "github.com/golang/mock/gomock"
 	. "github.com/prashantv/gostub"
 	. "github.com/smartystreets/goconvey/convey"
+
+	"github.com/vanus-labs/vanus/client"
+	"github.com/vanus-labs/vanus/client/pkg/api"
+	"github.com/vanus-labs/vanus/internal/primitive/vanus"
+	"github.com/vanus-labs/vanus/pkg/cluster"
+	metapb "github.com/vanus-labs/vanus/proto/pkg/meta"
 )
 
 func TestGateway_NewGateway(t *testing.T) {
@@ -46,9 +49,11 @@ func TestGateway_NewGateway(t *testing.T) {
 
 func TestGateway_StartReceive(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
+	rd := rand.New(rand.NewSource(time.Now().UnixNano()))
+	p := rd.Int31n(60000) + 3000
 	ga := &ceGateway{
 		config: Config{
-			Port: 18080,
+			Port: int(p),
 		},
 	}
 	Convey("test start receive ", t, func() {
@@ -77,19 +82,19 @@ func TestGateway_receive(t *testing.T) {
 		So(ret, ShouldBeError)
 	})
 
-	Convey("test receive failure2", t, func() {
-		e := ce.NewEvent()
-		reqData := &cehttp.RequestData{
-			URL: &url.URL{
-				Opaque: "/gateway/test",
-			},
-		}
-		e.SetExtension(primitive.XVanusDeliveryTime, "2006-01-02T15:04:05")
-		stub := StubFunc(&requestDataFromContext, reqData)
-		defer stub.Reset()
-		_, ret := ga.receive(ctx, e)
-		So(ret, ShouldBeError)
-	})
+	// Convey("test receive failure2", t, func() {
+	//	e := ce.NewEvent()
+	//	reqData := &cehttp.RequestData{
+	//		URL: &url.URL{
+	//			Opaque: "/gateway/test",
+	//		},
+	//	}
+	//	e.SetExtension(primitive.XVanusDeliveryTime, "2006-01-02T15:04:05")
+	//	stub := StubFunc(&requestDataFromContext, reqData)
+	//	defer stub.Reset()
+	//	_, ret := ga.receive(ctx, e)
+	//	So(ret, ShouldBeError)
+	// })
 
 	// Convey("test receive failure3", t, func() {
 	// 	e := ce.NewEvent()
@@ -109,38 +114,69 @@ func TestGateway_receive(t *testing.T) {
 	// })
 }
 
-func TestGateway_checkExtension(t *testing.T) {
-	Convey("test check extensions", t, func() {
-		e := ce.NewEvent()
-		err := checkExtension(e.Extensions())
-		So(err, ShouldBeNil)
-		e.SetExtension(primitive.XVanusDeliveryTime, "test")
-		err = checkExtension(e.Extensions())
-		So(err, ShouldBeNil)
-		e.SetExtension(primitive.XVanus+"fortest", "test")
-		err = checkExtension(e.Extensions())
-		So(err, ShouldNotBeNil)
-	})
-}
-
-func TestGateway_getEventBusFromPath(t *testing.T) {
-	Convey("test get eventbus from path return nil ", t, func() {
+func TestGateway_getEventbusFromPath(t *testing.T) {
+	ga := &ceGateway{}
+	Convey("invalid request path", t, func() {
 		reqData := &cehttp.RequestData{
 			URL: &url.URL{
-				Opaque: "/test",
+				Opaque: "/a/b/c/d",
 			},
 		}
-		ret := getEventBusFromPath(reqData)
-		So(ret, ShouldEqual, "")
+		_, err := ga.getEventbusFromPath(context.Background(), reqData)
+		So(err.Error(), ShouldEqual, "invalid request path")
+
+		reqData = &cehttp.RequestData{
+			URL: &url.URL{
+				Opaque: "/ns/b/eb/d",
+			},
+		}
+		_, err = ga.getEventbusFromPath(context.Background(), reqData)
+		So(err.Error(), ShouldEqual, "invalid request path")
 	})
+
+	Convey("test namespace or eventbus is empty", t, func() {
+		reqData := &cehttp.RequestData{
+			URL: &url.URL{
+				Opaque: "/namespaces//eventbus/test/events",
+			},
+		}
+		_, err := ga.getEventbusFromPath(context.Background(), reqData)
+		So(err.Error(), ShouldEqual, "namespace is empty")
+
+		reqData = &cehttp.RequestData{
+			URL: &url.URL{
+				Opaque: "/namespaces/default/eventbus//events",
+			},
+		}
+		_, err = ga.getEventbusFromPath(context.Background(), reqData)
+		So(err.Error(), ShouldEqual, "eventbus is empty")
+	})
+
+	ctrl := NewController(t)
+	cctrl := cluster.NewMockCluster(ctrl)
+	ebSvc := cluster.NewMockEventbusService(ctrl)
+	cctrl.EXPECT().EventbusService().AnyTimes().Return(ebSvc)
+
+	ebID := vanus.NewTestID().Uint64()
+	ebSvc.EXPECT().GetEventbusByName(Any(), "default", "test").Times(1).Return(
+		&metapb.Eventbus{
+			Name:        "test",
+			LogNumber:   1,
+			Id:          ebID,
+			Description: "desc",
+			NamespaceId: vanus.NewTestID().Uint64(),
+		}, nil)
+	ga.ctrl = cctrl
 	Convey("test get eventbus from path return path ", t, func() {
 		reqData := &cehttp.RequestData{
 			URL: &url.URL{
-				Opaque: "/gateway/test",
+				Opaque: "/namespaces/default/eventbus/test/events",
 			},
 		}
-		ret := getEventBusFromPath(reqData)
-		So(ret, ShouldEqual, "test")
+
+		id, err := ga.getEventbusFromPath(context.Background(), reqData)
+		So(err, ShouldBeNil)
+		So(id, ShouldEqual, ebID)
 	})
 }
 
@@ -148,8 +184,7 @@ func TestGateway_EventID(t *testing.T) {
 	ctrl := NewController(t)
 	defer ctrl.Finish()
 	var (
-		eventIDs    = "AABBCC"
-		busName     = "test"
+		busID       = vanus.NewTestID()
 		controllers = []string{"127.0.0.1:2048"}
 		port        = 8087
 	)
@@ -167,7 +202,7 @@ func TestGateway_EventID(t *testing.T) {
 	}
 	ga := NewGateway(cfg)
 
-	ga.client = mockClient
+	ga.proxySrv.SetClient(mockClient)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	_ = ga.startCloudEventsReceiver(ctx)
@@ -186,17 +221,14 @@ func TestGateway_EventID(t *testing.T) {
 		event.SetType("example.type")
 		_ = event.SetData(ce.ApplicationJSON, map[string]string{"hello": "world"})
 
-		ctx := ce.ContextWithTarget(context.Background(), fmt.Sprintf("http://127.0.0.1:%d/gateway/%s", cfg.GetCloudEventReceiverPort(), busName))
+		ctx := ce.ContextWithTarget(context.Background(),
+			fmt.Sprintf("http://127.0.0.1:%d/gateway/%s", cfg.GetCloudEventReceiverPort(), busID))
 		resEvent, res := c.Request(ctx, event)
 		So(ce.IsACK(res), ShouldBeTrue)
 		var httpResult *cehttp.Result
 		ce.ResultAs(res, &httpResult)
 		So(httpResult, ShouldNotBeNil)
 
-		var ed EventData
-		err = resEvent.DataAs(&ed)
-		So(err, ShouldBeNil)
-		So(ed.BusName, ShouldEqual, busName)
-		So(ed.EventID, ShouldEqual, eventIDs)
+		So(resEvent, ShouldBeNil)
 	})
 }

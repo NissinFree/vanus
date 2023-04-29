@@ -20,7 +20,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/linkall-labs/vanus/observability/log"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -31,10 +30,12 @@ import (
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+
+	"github.com/vanus-labs/vanus/observability/log"
 )
 
 const (
-	vanusVersion     = "v0.5.0"
+	vanusVersion     = "v0.8.0"
 	environmentKey   = "environment"
 	environmentValue = "local"
 )
@@ -49,7 +50,7 @@ var tp *tracerProvider
 
 func Init(cfg Config) {
 	if cfg.ServerName == "" {
-		log.Info(nil, "tracing name is empty, ignored", nil)
+		log.Info().Msg("tracing name is empty, ignored")
 		return
 	}
 	p := &tracerProvider{
@@ -62,20 +63,22 @@ func Init(cfg Config) {
 				panic("init tracer error: " + err.Error())
 			}
 			p.p = provider
-			log.Info(context.Background(), "tracing module started, OpenTelemetry is enable", map[string]interface{}{
-				"otel_collector": cfg.OtelCollector,
-			})
+			log.Info().Str("otel_collector", cfg.OtelCollector).
+				Msg("tracing module started, OpenTelemetry is enable")
 		} else {
-			log.Warning(context.Background(), "tracing module is enabled,"+
-				" but otel_collector is empty, switch to noop tracer", map[string]interface{}{
-				"otel_collector": cfg.OtelCollector,
-			})
+			// if otel_collector is empty, switch to noop tracer
+			log.Warn().Str("otel_collector", cfg.OtelCollector).Msg("tracing module is enabled," +
+				" but otel_collector is empty, switch to noop tracer")
 			p.p = oteltrace.NewNoopTracerProvider()
 		}
 	} else {
 		p.p = oteltrace.NewNoopTracerProvider()
 	}
 	tp = p
+}
+
+// Test input two num, return sum.
+func Test() {
 }
 
 func Start(ctx context.Context, pkgName, methodName string) (context.Context, oteltrace.Span) {

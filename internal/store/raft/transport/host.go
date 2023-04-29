@@ -19,13 +19,9 @@ import (
 	"context"
 	"sync"
 
-	// third-party libraries.
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
-
 	// first-party libraries.
-	"github.com/linkall-labs/vanus/observability/log"
-	"github.com/linkall-labs/vanus/raft/raftpb"
+	"github.com/vanus-labs/vanus/observability/log"
+	"github.com/vanus-labs/vanus/raft/raftpb"
 )
 
 type SendCallback func(error)
@@ -73,23 +69,21 @@ func (h *host) Stop() {
 func (h *host) Send(ctx context.Context, msg *raftpb.Message, to uint64, endpoint string, cb SendCallback) {
 	mux := h.resolveMultiplexer(ctx, to, endpoint)
 	if mux == nil {
-		log.Info(ctx, "found not mux", map[string]interface{}{
-			"to":       to,
-			"endpoint": endpoint,
-		})
+		log.Info(ctx).
+			Uint64("to", to).
+			Str("endpoint", endpoint).
+			Msg("found not mux")
 		cb(ErrNotReachable)
 		return
 	}
 	mux.Send(ctx, msg, cb)
 }
 
-func (h *host) resolveMultiplexer(ctx context.Context, to uint64, endpoint string) Multiplexer {
+func (h *host) resolveMultiplexer(_ context.Context, to uint64, endpoint string) Multiplexer {
 	if endpoint == "" {
 		if endpoint = h.resolver.Resolve(to); endpoint == "" {
 			return nil
 		}
-		span := trace.SpanFromContext(ctx)
-		span.SetAttributes(attribute.String("endpoint", endpoint))
 	}
 
 	if endpoint == h.callback {

@@ -15,6 +15,7 @@
 package proxy
 
 import (
+	// standard libraries.
 	"context"
 	"encoding/base64"
 	"encoding/binary"
@@ -30,31 +31,14 @@ import (
 	"sync/atomic"
 	stdtime "time"
 
+	// third-party libraries.
 	v2 "github.com/cloudevents/sdk-go/v2"
 	"github.com/cloudevents/sdk-go/v2/client"
 	"github.com/cloudevents/sdk-go/v2/protocol"
 	cehttp "github.com/cloudevents/sdk-go/v2/protocol/http"
 	"github.com/cloudevents/sdk-go/v2/types"
+	grpc_auth "github.com/grpc-ecosystem/go-grpc-middleware/auth"
 	recovery "github.com/grpc-ecosystem/go-grpc-middleware/recovery"
-	eb "github.com/linkall-labs/vanus/client"
-	"github.com/linkall-labs/vanus/client/pkg/api"
-	"github.com/linkall-labs/vanus/client/pkg/option"
-	"github.com/linkall-labs/vanus/client/pkg/policy"
-	"github.com/linkall-labs/vanus/internal/convert"
-	"github.com/linkall-labs/vanus/internal/primitive"
-	"github.com/linkall-labs/vanus/internal/primitive/interceptor/errinterceptor"
-	"github.com/linkall-labs/vanus/internal/primitive/vanus"
-	"github.com/linkall-labs/vanus/internal/trigger/filter"
-	"github.com/linkall-labs/vanus/internal/trigger/transform"
-	"github.com/linkall-labs/vanus/observability/log"
-	"github.com/linkall-labs/vanus/observability/metrics"
-	"github.com/linkall-labs/vanus/observability/tracing"
-	"github.com/linkall-labs/vanus/pkg/cluster"
-	"github.com/linkall-labs/vanus/pkg/errors"
-	"github.com/linkall-labs/vanus/proto/pkg/cloudevents"
-	ctrlpb "github.com/linkall-labs/vanus/proto/pkg/controller"
-	metapb "github.com/linkall-labs/vanus/proto/pkg/meta"
-	proxypb "github.com/linkall-labs/vanus/proto/pkg/proxy"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
@@ -67,6 +51,29 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
+
+	// first-party libraries.
+	eb "github.com/vanus-labs/vanus/client"
+	"github.com/vanus-labs/vanus/client/pkg/api"
+	"github.com/vanus-labs/vanus/client/pkg/option"
+	"github.com/vanus-labs/vanus/client/pkg/policy"
+	"github.com/vanus-labs/vanus/internal/convert"
+	"github.com/vanus-labs/vanus/internal/gateway/auth"
+	"github.com/vanus-labs/vanus/internal/primitive"
+	"github.com/vanus-labs/vanus/internal/primitive/authorization"
+	"github.com/vanus-labs/vanus/internal/primitive/interceptor/errinterceptor"
+	"github.com/vanus-labs/vanus/internal/primitive/vanus"
+	"github.com/vanus-labs/vanus/internal/trigger/filter"
+	"github.com/vanus-labs/vanus/internal/trigger/transform"
+	"github.com/vanus-labs/vanus/observability/log"
+	"github.com/vanus-labs/vanus/observability/metrics"
+	"github.com/vanus-labs/vanus/observability/tracing"
+	"github.com/vanus-labs/vanus/pkg/cluster"
+	"github.com/vanus-labs/vanus/pkg/errors"
+	"github.com/vanus-labs/vanus/proto/pkg/cloudevents"
+	ctrlpb "github.com/vanus-labs/vanus/proto/pkg/controller"
+	metapb "github.com/vanus-labs/vanus/proto/pkg/meta"
+	proxypb "github.com/vanus-labs/vanus/proto/pkg/proxy"
 )
 
 const (
@@ -94,11 +101,8 @@ type Config struct {
 	CloudEventReceiverPort int
 	Credentials            credentials.TransportCredentials
 	GRPCReflectionEnable   bool
+	AuthCfg                auth.Config
 }
-
-var (
-	_ proxypb.StoreProxyServer = &ControllerProxy{}
-)
 
 type ackCallback func(bool)
 
@@ -137,20 +141,28 @@ type ControllerProxy struct {
 	cfg          Config
 	tracer       *tracing.Tracer
 	client       eb.Client
-	eventbusCtrl ctrlpb.EventBusControllerClient
-	eventlogCtrl ctrlpb.EventLogControllerClient
+	eventbusCtrl ctrlpb.EventbusControllerClient
+	eventlogCtrl ctrlpb.EventlogControllerClient
 	triggerCtrl  ctrlpb.TriggerControllerClient
+	nsCtrl       ctrlpb.NamespaceControllerClient
+	authCtrl     ctrlpb.AuthControllerClient
 	grpcSrv      *grpc.Server
 	ctrl         cluster.Cluster
 	writerMap    sync.Map
 	cache        sync.Map
+	authService  *auth.Auth
+}
+
+// Make sure ControllerProxy implements proxypb.StoreProxyServer.
+var _ proxypb.StoreProxyServer = (*ControllerProxy)(nil)
+
+func authPublish(_ context.Context, req interface{}) (authorization.ResourceKind, vanus.ID, authorization.Action) {
+	id := vanus.NewIDFromUint64((req.(*proxypb.PublishRequest)).GetEventbusId())
+	return authorization.ResourceEventbus, id, authorization.EventbusWrite
 }
 
 func (cp *ControllerProxy) Publish(ctx context.Context, req *proxypb.PublishRequest) (*emptypb.Empty, error) {
-	if req.EventbusName == "" {
-		return nil, v2.NewHTTPResult(http.StatusBadRequest, "invalid eventbus name")
-	}
-
+	eventbusID := vanus.NewIDFromUint64(req.EventbusId)
 	responseCode := 200
 	_ctx, span := cp.tracer.Start(ctx, "Publish")
 	start := stdtime.Now()
@@ -158,73 +170,88 @@ func (cp *ControllerProxy) Publish(ctx context.Context, req *proxypb.PublishRequ
 		span.End()
 		used := float64(stdtime.Since(start)) / float64(stdtime.Millisecond)
 		metrics.GatewayEventReceivedCountVec.WithLabelValues(
-			req.EventbusName,
+			eventbusID.Key(),
 			metrics.LabelValueProtocolHTTP,
 			strconv.FormatInt(int64(len(req.Events.Events)), 10),
 			strconv.Itoa(responseCode),
 		).Add(float64(len(req.Events.Events)))
 
 		metrics.GatewayEventWriteLatencySummaryVec.WithLabelValues(
-			req.EventbusName,
+			eventbusID.Key(),
 			metrics.LabelValueProtocolHTTP,
 			strconv.FormatInt(int64(len(req.Events.Events)), 10),
 		).Observe(used)
 	}()
 
-	eventbusName := req.EventbusName
+	// todo  common event with delay event mixture
 	for idx := range req.Events.Events {
 		e := req.Events.Events[idx]
 		err := checkExtension(e.Attributes)
 		if err != nil {
 			responseCode = http.StatusBadRequest
-			return nil, v2.NewHTTPResult(http.StatusBadRequest, err.Error())
+			return nil, errors.ErrInvalidArgument.WithMessage(err.Error())
 		}
 		if e.Attributes == nil {
 			e.Attributes = make(map[string]*cloudevents.CloudEvent_CloudEventAttributeValue, 0)
 		}
 		e.Attributes[primitive.XVanusEventbus] = &cloudevents.CloudEvent_CloudEventAttributeValue{
-			Attr: &cloudevents.CloudEvent_CloudEventAttributeValue_CeString{CeString: eventbusName},
+			Attr: &cloudevents.CloudEvent_CloudEventAttributeValue_CeString{CeString: eventbusID.Key()},
 		}
 		if eventTime, ok := e.Attributes[primitive.XVanusDeliveryTime]; ok {
-			// validate event time
-			if _, err := types.ParseTime(eventTime.GetCeString()); err != nil {
-				log.Error(_ctx, "invalid format of event time", map[string]interface{}{
-					log.KeyError: err,
-					"eventTime":  eventTime.String(),
-				})
+			switch attr := eventTime.GetAttr().(type) {
+			case *cloudevents.CloudEvent_CloudEventAttributeValue_CeTimestamp:
+			case *cloudevents.CloudEvent_CloudEventAttributeValue_CeString:
+				// validate event time
+				t, err := types.ParseTime(attr.CeString)
+				if err != nil {
+					log.Error(_ctx).Err(err).
+						Stringer("eventTime", eventTime).
+						Msg("invalid format of event time")
+					responseCode = http.StatusBadRequest
+					return nil, errors.ErrInvalidArgument.WithMessage("invalid delivery time")
+				}
+				eventTime.Attr = &cloudevents.CloudEvent_CloudEventAttributeValue_CeTimestamp{
+					CeTimestamp: timestamppb.New(t),
+				}
+			default:
 				responseCode = http.StatusBadRequest
-				return nil, v2.NewHTTPResult(http.StatusBadRequest, "invalid delivery time")
+				return nil, errors.ErrInvalidArgument.WithMessage("invalid delivery time")
 			}
-			req.EventbusName = primitive.TimerEventbusName
+			tID, err := cp.ctrl.EventbusService().GetSystemEventbusByName(ctx, primitive.TimerEventbusName)
+			if err != nil {
+				return nil, err
+			}
+			req.EventbusId = tID.Id
 		}
 	}
 
-	err := cp.writeEvents(ctx, req.EventbusName, req.Events)
+	err := cp.writeEvents(ctx, vanus.NewIDFromUint64(req.EventbusId), req.Events)
 	if err != nil {
 		return nil, err
 	}
 	return &emptypb.Empty{}, nil
 }
 
-func (cp *ControllerProxy) writeEvents(ctx context.Context,
-	eventbusName string,
-	events *cloudevents.CloudEventBatch) error {
-	val, exist := cp.writerMap.Load(eventbusName)
+func (cp *ControllerProxy) writeEvents(
+	ctx context.Context, eventbusID vanus.ID, events *cloudevents.CloudEventBatch,
+) error {
+	val, exist := cp.writerMap.Load(eventbusID)
 	if !exist {
-		val, _ = cp.writerMap.LoadOrStore(eventbusName, cp.client.Eventbus(ctx, eventbusName).Writer())
+		val, _ = cp.writerMap.LoadOrStore(eventbusID,
+			cp.client.Eventbus(ctx, api.WithID(eventbusID.Uint64())).Writer())
 	}
 	w, _ := val.(api.BusWriter)
 	_, err := w.Append(ctx, events)
 	if err != nil {
-		log.Warning(ctx, "append to failed", map[string]interface{}{
-			log.KeyError: err,
-			"eventbus":   eventbusName,
-		})
-		return v2.NewHTTPResult(http.StatusInternalServerError, err.Error())
+		log.Warn(ctx).Err(err).
+			Stringer("eventbus", eventbusID).
+			Msg("append to failed")
+		return err
 	}
 	return nil
 }
 
+// Subscribe todo authentication
 func (cp *ControllerProxy) Subscribe(req *proxypb.SubscribeRequest, stream proxypb.StoreProxy_SubscribeServer) error {
 	_ctx, span := cp.tracer.Start(context.Background(), "Subscribe")
 	defer span.End()
@@ -232,10 +259,9 @@ func (cp *ControllerProxy) Subscribe(req *proxypb.SubscribeRequest, stream proxy
 	// 1. modify subscription sink
 	subscriptionID, err := vanus.NewIDFromString(req.SubscriptionId)
 	if err != nil {
-		log.Error(_ctx, "parse subscription id failed", map[string]interface{}{
-			log.KeyError: err,
-			"id":         req.SubscriptionId,
-		})
+		log.Error(_ctx).Err(err).
+			Str("id", req.SubscriptionId).
+			Msg("parse subscription id failed")
 		return err
 	}
 
@@ -244,30 +270,29 @@ func (cp *ControllerProxy) Subscribe(req *proxypb.SubscribeRequest, stream proxy
 	}
 	meta, err := cp.triggerCtrl.GetSubscription(context.Background(), getSubscriptionReq)
 	if err != nil {
-		log.Error(_ctx, "get subscription failed", map[string]interface{}{
-			log.KeyError: err,
-			"id":         req.SubscriptionId,
-		})
+		log.Error(_ctx).Err(err).
+			Str("id", req.SubscriptionId).
+			Msg("get subscription failed")
 		return err
 	}
 
+	// TODO add config
 	newSink := fmt.Sprintf("http://%s:%d%s/%s",
 		os.Getenv("POD_IP"), cp.cfg.SinkPort, httpRequestPrefix, req.SubscriptionId)
 	if meta.Sink != newSink {
-		if err := cp.disableSubsciption(_ctx, req, subscriptionID.Uint64()); err != nil {
-			log.Error(_ctx, "disable subscription failed", map[string]interface{}{
-				log.KeyError: err,
-				"id":         req.SubscriptionId,
-			})
+		if err = cp.disableSubscription(_ctx, req, subscriptionID.Uint64()); err != nil {
+			log.Error(_ctx).Err(err).
+				Str("id", req.SubscriptionId).
+				Msg("disable subscription failed")
 			return err
 		}
 
-		_, err = cp.triggerCtrl.UpdateSubscription(_ctx, newSubscription(meta, subscriptionID.Uint64(), newSink))
+		_, err = cp.triggerCtrl.UpdateSubscription(_ctx,
+			newSubscription(meta, subscriptionID.Uint64(), newSink))
 		if err != nil {
-			log.Error(_ctx, "update subscription sink failed", map[string]interface{}{
-				log.KeyError: err,
-				"id":         req.SubscriptionId,
-			})
+			log.Error(_ctx).Err(err).
+				Str("id", req.SubscriptionId).
+				Msg("update subscription sink failed")
 			return err
 		}
 
@@ -276,10 +301,10 @@ func (cp *ControllerProxy) Subscribe(req *proxypb.SubscribeRequest, stream proxy
 		}
 		_, err = cp.triggerCtrl.ResumeSubscription(context.Background(), resumeSubscriptionReq)
 		if err != nil {
-			log.Error(_ctx, "resume subscription failed", map[string]interface{}{
-				log.KeyError: err,
-				"id":         req.SubscriptionId,
-			})
+			log.Error(_ctx).
+				Err(err).
+				Str("id", req.SubscriptionId).
+				Msg("resume subscription failed")
 			return err
 		}
 	}
@@ -297,15 +322,15 @@ func (cp *ControllerProxy) Subscribe(req *proxypb.SubscribeRequest, stream proxy
 			eventpb, err := ToProto(msg.event)
 			if err != nil {
 				// TODO(jiangkai): err check
-				log.Error(_ctx, "to eventpb failed", map[string]interface{}{
-					log.KeyError: err,
-					"event":      msg.event,
-				})
+				log.Error(_ctx).
+					Err(err).
+					Interface("event", msg.event).
+					Msg("failed to convert ot eventbus protobuf")
 				break
 			}
-			log.Debug(_ctx, "subscribe stream send event", map[string]interface{}{
-				"eventpb": eventpb.String(),
-			})
+			log.Debug(_ctx).
+				Str("event_pb", eventpb.String()).
+				Msg("subscribe stream send event")
 			err = subscribe.stream().Send(&proxypb.SubscribeResponse{
 				SequenceId: msg.sequenceID,
 				Events: &cloudevents.CloudEventBatch{
@@ -332,22 +357,20 @@ func (cp *ControllerProxy) Ack(stream proxypb.StoreProxy_AckServer) error {
 	for {
 		rsp, err := stream.Recv()
 		if err != nil {
-			log.Error(_ctx, "ack stream recv failed", map[string]interface{}{
-				log.KeyError: err,
-			})
+			log.Error(_ctx).Err(err).
+				Msg("ack stream recv failed")
 			return err
 		}
-		log.Debug(_ctx, "ack stream recv a response", map[string]interface{}{
-			log.KeyError: err,
-			"rsp":        rsp,
-		})
+		log.Debug(_ctx).
+			Err(err).
+			Interface("rsp", rsp).
+			Msg("ack stream recv a response")
 		cache, ok := cp.cache.Load(rsp.SubscriptionId)
 		if !ok {
 			// TODO(jiangkai): err check
-			log.Error(_ctx, "subscription not found", map[string]interface{}{
-				log.KeyError:      err,
-				"subscription-id": rsp.SubscriptionId,
-			})
+			log.Error(_ctx).Err(err).
+				Str("subscription-id", rsp.SubscriptionId).
+				Msg("subscription not found")
 			continue
 		}
 		cb, _ := cache.(*subscribeCache).acks.LoadAndDelete(rsp.SequenceId)
@@ -399,18 +422,18 @@ func ToProto(e *v2.Event) (*cloudevents.CloudEvent, error) {
 	return container, nil
 }
 
-func (cp *ControllerProxy) disableSubsciption(
+func (cp *ControllerProxy) disableSubscription(
 	ctx context.Context, req *proxypb.SubscribeRequest, subscriptionID uint64,
 ) error {
 	disableSubscriptionReq := &ctrlpb.DisableSubscriptionRequest{
-		Id: subscriptionID,
+		Id:            subscriptionID,
+		Declaratively: true,
 	}
 	_, err := cp.triggerCtrl.DisableSubscription(context.Background(), disableSubscriptionReq)
 	if err != nil {
-		log.Error(ctx, "disable subscription failed", map[string]interface{}{
-			log.KeyError: err,
-			"id":         req.SubscriptionId,
-		})
+		log.Error(ctx).Err(err).
+			Str("id", req.SubscriptionId).
+			Msg("disable subscription failed")
 		return err
 	}
 
@@ -439,17 +462,20 @@ func newSubscription(
 	return &ctrlpb.UpdateSubscriptionRequest{
 		Id: subscriptionID,
 		Subscription: &ctrlpb.SubscriptionRequest{
-			Source:      info.Source,
-			Types:       info.Types,
-			Config:      info.Config,
-			Filters:     info.Filters,
-			Sink:        newsink,
-			Protocol:    info.Protocol,
-			EventBus:    info.EventBus,
-			Transformer: info.Transformer,
-			Name:        info.Name,
-			Description: info.Description,
-			Disable:     info.Disable,
+			Source:           info.Source,
+			Types:            info.Types,
+			Config:           info.Config,
+			Filters:          info.Filters,
+			Sink:             newsink,
+			SinkCredential:   info.SinkCredential,
+			Protocol:         info.Protocol,
+			ProtocolSettings: info.ProtocolSettings,
+			Transformer:      info.Transformer,
+			Name:             info.Name,
+			Description:      info.Description,
+			Disable:          info.Disable,
+			NamespaceId:      info.NamespaceId,
+			EventbusId:       info.EventbusId,
 		},
 	}
 }
@@ -521,16 +547,28 @@ func NewControllerProxy(cfg Config) *ControllerProxy {
 		eventbusCtrl: ctrl.EventbusService().RawClient(),
 		eventlogCtrl: ctrl.EventlogService().RawClient(),
 		triggerCtrl:  ctrl.TriggerService().RawClient(),
+		nsCtrl:       ctrl.NamespaceService().RawClient(),
+		authCtrl:     ctrl.AuthService().RawClient(),
+		authService:  auth.NewAuth(cfg.AuthCfg, ctrl),
 	}
 }
 
+// SetClient just for test.
+func (cp *ControllerProxy) SetClient(client eb.Client) {
+	cp.client = client
+}
+
 func (cp *ControllerProxy) Start() error {
+	cp.registerAuthentication()
+	if err := cp.ctrl.WaitForControllerReady(false); err != nil {
+		panic("error when wait cluster become ready, " + err.Error())
+	}
 	recoveryOpt := recovery.WithRecoveryHandlerContext(
 		func(ctx context.Context, p interface{}) error {
-			log.Error(ctx, "goroutine panicked", map[string]interface{}{
-				log.KeyError: fmt.Sprintf("%v", p),
-				"stack":      string(debug.Stack()),
-			})
+			log.Error(ctx).
+				Str(log.KeyError, fmt.Sprintf("%v", p)).
+				Bytes("stack", debug.Stack()).
+				Msg("goroutine panicked")
 			return status.Errorf(codes.Internal, "%v", p)
 		},
 	)
@@ -540,11 +578,14 @@ func (cp *ControllerProxy) Start() error {
 			errinterceptor.StreamServerInterceptor(),
 			recovery.StreamServerInterceptor(recoveryOpt),
 			otelgrpc.StreamServerInterceptor(),
+			grpc_auth.StreamServerInterceptor(cp.authService.Authenticate),
 		),
 		grpc.ChainUnaryInterceptor(
 			errinterceptor.UnaryServerInterceptor(),
 			recovery.UnaryServerInterceptor(recoveryOpt),
 			otelgrpc.UnaryServerInterceptor(),
+			grpc_auth.UnaryServerInterceptor(cp.authService.Authenticate),
+			auth.UnaryServerInterceptor(cp.authService.Authorize),
 		),
 	)
 
@@ -570,14 +611,15 @@ func (cp *ControllerProxy) Start() error {
 		}
 		wg.Done()
 	}()
-	log.Info(context.Background(), "the grpc proxy ready to work", nil)
+	log.Info().Msg("the grpc proxy ready to work")
 
 	sinkListen, err := net.Listen("tcp", fmt.Sprintf(":%d", cp.cfg.SinkPort))
 	if err != nil {
 		return err
 	}
 
-	c, err := client.NewHTTP(cehttp.WithListener(sinkListen), cehttp.WithRequestDataAtContextMiddleware())
+	c, err := client.NewHTTP(cehttp.WithListener(sinkListen),
+		cehttp.WithRequestDataAtContextMiddleware())
 	if err != nil {
 		return err
 	}
@@ -589,36 +631,42 @@ func (cp *ControllerProxy) Start() error {
 		}
 		wg.Done()
 	}()
-	log.Info(context.Background(), "the sink proxy ready to work", nil)
+	log.Info().Msg("the sink proxy ready to work")
 	return nil
 }
 
 func (cp *ControllerProxy) receive(ctx context.Context, event v2.Event) (*v2.Event, protocol.Result) {
 	_ctx, span := cp.tracer.Start(ctx, "receive")
 	defer span.End()
+
 	subscriptionID := getSubscriptionIDFromPath(requestDataFromContext(_ctx))
 	if subscriptionID == "" {
 		return nil, v2.NewHTTPResult(http.StatusBadRequest, "invalid subscription id")
 	}
+
 	cache, ok := cp.cache.Load(subscriptionID)
 	if !ok {
 		// retry
 		return nil, v2.NewHTTPResult(http.StatusInternalServerError, "subscription not exist")
 	}
-	log.Debug(_ctx, "sink proxy received a event", map[string]interface{}{
-		"event": event.String(),
-	})
-	sequenceID := atomic.AddUint64(&cache.(*subscribeCache).sequenceID, 1)
+
+	log.Debug(_ctx).
+		Stringer("event", event).
+		Msg("sink proxy received a event")
+
+	sub, _ := cache.(*subscribeCache)
+
+	sequenceID := atomic.AddUint64(&sub.sequenceID, 1)
 	var success bool
 	donec := make(chan struct{})
-	cache.(*subscribeCache).acks.Store(sequenceID, ackCallback(func(result bool) {
-		log.Info(_ctx, "ack callback", map[string]interface{}{
-			"result": result,
-		})
+	sub.acks.Store(sequenceID, ackCallback(func(result bool) {
+		log.Info(_ctx).
+			Bool("result", result).
+			Msg("ack callback")
 		success = result
 		close(donec)
 	}))
-	cache.(*subscribeCache).eventc <- message{
+	sub.eventc <- message{
 		sequenceID: sequenceID,
 		event:      &event,
 	}
@@ -652,18 +700,24 @@ func (cp *ControllerProxy) ClusterInfo(_ context.Context, _ *emptypb.Empty) (*pr
 	}, nil
 }
 
-func (cp *ControllerProxy) LookupOffset(ctx context.Context,
-	req *proxypb.LookupOffsetRequest) (*proxypb.LookupOffsetResponse, error) {
+func authLookupOffset(_ context.Context, req interface{}) (authorization.ResourceKind, vanus.ID, authorization.Action) {
+	id := vanus.NewIDFromUint64((req.(*proxypb.LookupOffsetRequest)).GetEventbusId())
+	return authorization.ResourceEventbus, id, authorization.EventbusRead
+}
+
+func (cp *ControllerProxy) LookupOffset(
+	ctx context.Context, req *proxypb.LookupOffsetRequest,
+) (*proxypb.LookupOffsetResponse, error) {
 	elList := make([]api.Eventlog, 0)
 	if req.EventlogId > 0 {
 		id := vanus.NewIDFromUint64(req.EventlogId)
-		l, err := cp.client.Eventbus(ctx, req.GetEventbus()).GetLog(ctx, id.Uint64())
+		l, err := cp.client.Eventbus(ctx, api.WithID(req.EventbusId)).GetLog(ctx, id.Uint64())
 		if err != nil {
 			return nil, err
 		}
 		elList = append(elList, l)
 	} else {
-		ls, err := cp.client.Eventbus(ctx, req.GetEventbus()).ListLog(ctx)
+		ls, err := cp.client.Eventbus(ctx, api.WithID(req.EventbusId)).ListLog(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -686,9 +740,16 @@ func (cp *ControllerProxy) LookupOffset(ctx context.Context,
 	return res, nil
 }
 
-func (cp *ControllerProxy) GetEvent(ctx context.Context,
-	req *proxypb.GetEventRequest) (*proxypb.GetEventResponse, error) {
-	if req.GetEventbus() == "" {
+func authGetEvent(_ context.Context, req interface{}) (authorization.ResourceKind, vanus.ID, authorization.Action) {
+	id := vanus.NewIDFromUint64((req.(*proxypb.GetEventRequest)).GetEventbusId())
+	return authorization.ResourceEventbus, id, authorization.EventbusRead
+}
+
+func (cp *ControllerProxy) GetEvent(
+	ctx context.Context, req *proxypb.GetEventRequest,
+) (*proxypb.GetEventResponse, error) {
+	vid := vanus.NewIDFromUint64(req.EventbusId)
+	if vid == vanus.EmptyID() {
 		return nil, errInvalidEventbus
 	}
 
@@ -709,11 +770,11 @@ func (cp *ControllerProxy) GetEvent(ctx context.Context,
 		num = maximumNumberPerGetRequest
 	}
 
-	ls, err := cp.client.Eventbus(ctx, req.GetEventbus()).ListLog(ctx)
+	ls, err := cp.client.Eventbus(ctx, api.WithID(vid.Uint64())).ListLog(ctx)
 	if err != nil {
 		return nil, err
 	}
-	reader := cp.client.Eventbus(ctx, req.GetEventbus()).Reader(
+	reader := cp.client.Eventbus(ctx, api.WithID(vid.Uint64())).Reader(
 		option.WithDisablePolling(),
 		option.WithReadPolicy(policy.NewManuallyReadPolicy(ls[0], offset)),
 		option.WithBatchSize(int(num)),
@@ -733,11 +794,12 @@ func (cp *ControllerProxy) GetEvent(ctx context.Context,
 	}, nil
 }
 
-func (cp *ControllerProxy) ValidateSubscription(ctx context.Context,
-	req *proxypb.ValidateSubscriptionRequest) (*proxypb.ValidateSubscriptionResponse, error) {
+func (cp *ControllerProxy) ValidateSubscription(
+	ctx context.Context, req *proxypb.ValidateSubscriptionRequest,
+) (*proxypb.ValidateSubscriptionResponse, error) {
 	if req.GetEvent() == nil {
 		res, err := cp.GetEvent(ctx, &proxypb.GetEventRequest{
-			Eventbus:   req.Eventbus,
+			EventbusId: req.EventbusId,
 			EventlogId: req.Eventlog,
 			Offset:     req.Offset,
 			Number:     1,
@@ -750,7 +812,8 @@ func (cp *ControllerProxy) ValidateSubscription(ctx context.Context,
 
 	e := v2.NewEvent()
 	if err := e.UnmarshalJSON(req.GetEvent()); err != nil {
-		return nil, errors.ErrInvalidRequest.WithMessage("failed to unmarshall event to CloudEvent").Wrap(err)
+		return nil, errors.ErrInvalidRequest.WithMessage(
+			"failed to unmarshall event to CloudEvent").Wrap(err)
 	}
 
 	if req.GetSubscription() == nil {
@@ -785,19 +848,20 @@ func (cp *ControllerProxy) ValidateSubscription(ctx context.Context,
 }
 
 // getByEventID why added this? can it be deleted?
-func (cp *ControllerProxy) getByEventID(ctx context.Context,
-	req *proxypb.GetEventRequest) (*proxypb.GetEventResponse, error) {
+func (cp *ControllerProxy) getByEventID(
+	ctx context.Context, req *proxypb.GetEventRequest,
+) (*proxypb.GetEventResponse, error) {
 	logID, off, err := decodeEventID(req.EventId)
 	if err != nil {
 		return nil, err
 	}
 
-	l, err := cp.client.Eventbus(ctx, req.GetEventbus()).GetLog(ctx, logID)
+	l, err := cp.client.Eventbus(ctx, api.WithID(req.GetEventbusId())).GetLog(ctx, logID)
 	if err != nil {
 		return nil, err
 	}
 
-	reader := cp.client.Eventbus(ctx, req.GetEventbus()).Reader(
+	reader := cp.client.Eventbus(ctx, api.WithID(req.GetEventbusId())).Reader(
 		option.WithReadPolicy(policy.NewManuallyReadPolicy(l, off)),
 		option.WithDisablePolling(),
 	)

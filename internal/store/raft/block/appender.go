@@ -22,17 +22,17 @@ import (
 	"sort"
 	"time"
 
-	// first-party libraries.
-	"github.com/linkall-labs/vanus/observability/log"
-	"github.com/linkall-labs/vanus/raft"
-	"github.com/linkall-labs/vanus/raft/raftpb"
+	// third-party libraries.
+	"github.com/vanus-labs/vanus/raft"
+	"github.com/vanus-labs/vanus/raft/raftpb"
 
 	// this project.
-	"github.com/linkall-labs/vanus/internal/primitive/executor"
-	"github.com/linkall-labs/vanus/internal/primitive/vanus"
-	"github.com/linkall-labs/vanus/internal/store/block"
-	"github.com/linkall-labs/vanus/internal/store/raft/storage"
-	"github.com/linkall-labs/vanus/internal/store/raft/transport"
+	"github.com/vanus-labs/vanus/internal/primitive/executor"
+	"github.com/vanus-labs/vanus/internal/primitive/vanus"
+	"github.com/vanus-labs/vanus/internal/store/block"
+	"github.com/vanus-labs/vanus/internal/store/raft/storage"
+	"github.com/vanus-labs/vanus/internal/store/raft/transport"
+	"github.com/vanus-labs/vanus/observability/log"
 )
 
 const (
@@ -79,6 +79,7 @@ type appender struct {
 	node    *raft.RawNode
 	storage *storage.Storage
 	host    transport.Host
+	e       *Engine
 
 	hint map[uint64]string
 
@@ -105,10 +106,10 @@ func (a *appender) Stop(ctx context.Context) {
 	a.persistExecutor.Close()
 	a.commitExecutor.Close()
 
-	log.Info(ctx, "raft appender is stopped.", map[string]interface{}{
-		"node_id":   a.ID(),
-		"leader_id": a.leaderID,
-	})
+	log.Info(ctx).
+		Stringer("node_id", a.ID()).
+		Stringer("leader_id", a.leaderID).
+		Msg("raft appender is stopped.")
 }
 
 func (a *appender) Delete(ctx context.Context) {
@@ -117,12 +118,12 @@ func (a *appender) Delete(ctx context.Context) {
 
 	// FIXME(james.yin): wakeup inflight append calls?
 
-	log.Info(ctx, "raft appender is deleted.", map[string]interface{}{
-		"node_id": a.ID(),
-	})
+	log.Info(ctx).
+		Stringer("node_id", a.ID()).
+		Msg("raft appender is deleted.")
 }
 
-func (a *appender) Bootstrap(ctx context.Context, blocks []Peer) error {
+func (a *appender) Bootstrap(_ context.Context, blocks []Peer) error {
 	peers := make([]raft.Peer, 0, len(blocks))
 	for _, ep := range blocks {
 		peers = append(peers, raft.Peer{
@@ -147,7 +148,7 @@ func (a *appender) persistHardState(ctx context.Context, hs raftpb.HardState) {
 }
 
 func (a *appender) persistEntries(ctx context.Context, entries []raftpb.Entry) {
-	// log.Debug(ctx, "Append entries to raft log.", map[string]interface{}{
+	// log.Debug(ctx).Msg("Append entries to raft log.")
 	// 	"node_id":        a.ID(),
 	// 	"appended_index": entries[0].Index,
 	// 	"entries_num":    len(entries),
@@ -168,7 +169,7 @@ func (a *appender) persistEntries(ctx context.Context, entries []raftpb.Entry) {
 }
 
 func (a *appender) compactLog(ctx context.Context, index uint64) {
-	// log.Debug(ctx, "Compact raft log.", map[string]interface{}{
+	// log.Debug(ctx).Msg("Compact raft log.")
 	// 	"node_id": a.ID(),
 	// 	"index":   index,
 	// })
@@ -194,7 +195,7 @@ func (a *appender) applyEntries(ctx context.Context, committedEntries []raftpb.E
 		index := pbEntry.Index
 		// FIXME(james.yin): do not pass frag with nil value?
 		a.raw.CommitAppend(ctx, frag, func() {
-			// log.Debug(ctx, "Store applied offset.", map[string]interface{}{
+			// log.Debug(ctx).Msg("Store applied offset.")
 			// 	"node_id":        a.ID(),
 			// 	"applied_offset": index,
 			// })
@@ -227,15 +228,15 @@ func (a *appender) changeMembership(ctx context.Context, pbEntry *raftpb.Entry) 
 	// FIXME(james.yin): do not pass frag with nil value?
 	a.raw.CommitAppend(ctx, nil, func() {
 		<-ch
-		log.Debug(ctx, "Store applied offset for conf change.", map[string]interface{}{
-			"node_id":        a.ID(),
-			"applied_offset": index,
-		})
+		log.Debug(ctx).
+			Stringer("node_id", a.ID()).
+			Uint64("applied_offset", index).
+			Msg("Store applied offset for conf change.")
 		a.onAppend(ctx, index)
 	})
 }
 
-func (a *appender) changeConf(ctx context.Context, pbEntry *raftpb.Entry) *raftpb.ConfState {
+func (a *appender) changeConf(_ context.Context, pbEntry *raftpb.Entry) *raftpb.ConfState {
 	if pbEntry.Type == raftpb.EntryNormal {
 		// TODO(james.yin): return error
 		return nil
@@ -277,9 +278,7 @@ func (a *appender) changeConf(ctx context.Context, pbEntry *raftpb.Entry) *raftp
 }
 
 func (a *appender) becomeLeader(ctx context.Context) {
-	log.Info(ctx, "Block become leader.", map[string]interface{}{
-		"node_id": a.ID(),
-	})
+	log.Info(ctx).Stringer("node_id", a.ID()).Msg("Block become leader.")
 
 	// Reset append context when become leader.
 	a.resetAppendContext()

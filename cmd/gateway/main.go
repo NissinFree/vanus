@@ -15,29 +15,25 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"os"
 
-	"github.com/linkall-labs/vanus/internal/gateway"
-	"github.com/linkall-labs/vanus/observability"
-	"github.com/linkall-labs/vanus/observability/log"
-	"github.com/linkall-labs/vanus/observability/metrics"
-	"github.com/linkall-labs/vanus/pkg/util/signal"
+	"github.com/vanus-labs/vanus/observability"
+	"github.com/vanus-labs/vanus/observability/log"
+	"github.com/vanus-labs/vanus/observability/metrics"
+	"github.com/vanus-labs/vanus/pkg/util/signal"
+
+	"github.com/vanus-labs/vanus/internal/gateway"
 )
 
-var (
-	configPath = flag.String("config", "./config/gateway.yaml", "gateway config file path")
-)
+var configPath = flag.String("config", "./config/gateway.yaml", "gateway config file path")
 
 func main() {
 	flag.Parse()
 
 	cfg, err := gateway.InitConfig(*configPath)
 	if err != nil {
-		log.Error(context.Background(), "init config error", map[string]interface{}{
-			log.KeyError: err,
-		})
+		log.Error().Err(err).Msg("init config error")
 		os.Exit(-1)
 	}
 
@@ -45,19 +41,17 @@ func main() {
 	ga := gateway.NewGateway(*cfg)
 
 	if err = ga.Start(ctx); err != nil {
-		log.Error(context.Background(), "start gateway failed", map[string]interface{}{
-			log.KeyError: err,
-		})
+		log.Error().Err(err).Msg("start gateway failed")
 		os.Exit(-1)
 	}
 
 	cfg.Observability.T.ServerName = "Vanus Gateway"
 	_ = observability.Initialize(ctx, cfg.Observability, metrics.GetGatewayMetrics)
-	log.Info(ctx, "Gateway has started", nil)
+	log.Info(ctx).Msg("Gateway has started")
 	select {
 	case <-ctx.Done():
-		log.Info(ctx, "received system signal, preparing exit", nil)
+		log.Info(ctx).Msg("received system signal, preparing exit")
 	}
 	ga.Stop()
-	log.Info(ctx, "the gateway has been shutdown gracefully", nil)
+	log.Info(ctx).Msg("the gateway has been shutdown gracefully")
 }

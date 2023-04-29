@@ -23,14 +23,14 @@ import (
 	"os"
 
 	// first-party libraries.
-	"github.com/linkall-labs/vanus/pkg/errors"
+	"github.com/vanus-labs/vanus/pkg/errors"
 
 	// this project.
-	"github.com/linkall-labs/vanus/internal/store/block"
-	"github.com/linkall-labs/vanus/internal/store/io"
-	ceschema "github.com/linkall-labs/vanus/internal/store/schema/ce"
-	"github.com/linkall-labs/vanus/internal/store/vsb/codec"
-	"github.com/linkall-labs/vanus/internal/store/vsb/index"
+	"github.com/vanus-labs/vanus/internal/store/block"
+	"github.com/vanus-labs/vanus/internal/store/io"
+	ceschema "github.com/vanus-labs/vanus/internal/store/schema/ce"
+	"github.com/vanus-labs/vanus/internal/store/vsb/codec"
+	"github.com/vanus-labs/vanus/internal/store/vsb/index"
 )
 
 var (
@@ -77,11 +77,7 @@ func (b *vsBlock) init(ctx context.Context) error {
 		return err
 	}
 
-	if err := b.validate(ctx); err != nil {
-		return err
-	}
-
-	return nil
+	return b.validate(ctx)
 }
 
 func (b *vsBlock) repairMeta() error {
@@ -200,7 +196,7 @@ func (b *vsBlock) rebuildIndexes(num int, tail []index.Index) error {
 	return nil
 }
 
-func (b *vsBlock) validate(ctx context.Context) error {
+func (b *vsBlock) validate(_ context.Context) error {
 	if len(b.indexes) < int(b.fm.entryNum) {
 		return errCorrupted
 	}

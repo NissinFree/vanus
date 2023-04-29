@@ -19,11 +19,11 @@ import (
 	"context"
 
 	// first-party libraries.
-	"github.com/linkall-labs/vanus/observability/log"
-	"github.com/linkall-labs/vanus/raft/raftpb"
+	"github.com/vanus-labs/vanus/observability/log"
+	"github.com/vanus-labs/vanus/raft/raftpb"
 
 	// this project.
-	"github.com/linkall-labs/vanus/internal/store/raft/transport"
+	"github.com/vanus-labs/vanus/internal/store/raft/transport"
 )
 
 // Make sure appender implements transport.Receiver.
@@ -34,21 +34,21 @@ func (a *appender) send(ctx context.Context, msg *raftpb.Message) {
 	endpoint := a.hint[to]
 	a.host.Send(ctx, msg, to, endpoint, func(err error) {
 		if err != nil {
-			log.Warning(ctx, "send message failed", map[string]interface{}{
-				log.KeyError: err,
-				"to":         to,
-				"endpoint":   endpoint,
-			})
+			log.Warn(ctx).Err(err).
+				Uint64("to", to).
+				Str("endpoint", endpoint).
+				Msg("send message failed")
 			a.reportUnreachable(msg.To)
 		}
 	})
 }
 
 // Receive implements transport.Receiver.
-func (a *appender) Receive(ctx context.Context, msg *raftpb.Message, from uint64, endpoint string) {
+func (a *appender) Receive(_ context.Context, msg *raftpb.Message, from uint64, endpoint string) {
 	a.transportExecutor.Execute(func() {
 		if endpoint != "" && a.hint[from] != endpoint {
 			a.hint[from] = endpoint
+			_ = a.e.RegisterNodeRecord(from, endpoint)
 		}
 
 		a.step(msg)

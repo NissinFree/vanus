@@ -19,8 +19,8 @@ import (
 
 	ce "github.com/cloudevents/sdk-go/v2"
 	jsoniter "github.com/json-iterator/go"
-	"github.com/linkall-labs/vanus/internal/primitive/transform/context"
-	"github.com/tidwall/gjson"
+
+	"github.com/vanus-labs/vanus/internal/primitive/transform/context"
 )
 
 func (t *Template) Execute(ceCtx *context.EventContext) []byte {
@@ -62,7 +62,7 @@ func (t *Template) Execute(ceCtx *context.EventContext) []byte {
 	stream.Flush()
 	bytes := sb.Bytes()
 	if t.contentType == "" {
-		if gjson.ValidBytes(bytes) {
+		if jsoniter.Valid(bytes) {
 			t.contentType = ce.ApplicationJSON
 		} else {
 			t.contentType = ce.TextPlain

@@ -15,6 +15,7 @@
 package transport
 
 import (
+	// standard libraries.
 	"context"
 	"fmt"
 	"net"
@@ -22,18 +23,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/linkall-labs/vanus/observability/log"
-	. "github.com/linkall-labs/vanus/proto/pkg/raft"
-	"github.com/linkall-labs/vanus/raft/raftpb"
+	// third-party libraries.
 	. "github.com/smartystreets/goconvey/convey"
 	"google.golang.org/grpc"
+
+	// first-party libraries.
+	"github.com/vanus-labs/vanus/observability/log"
+	. "github.com/vanus-labs/vanus/proto/pkg/raft"
+	"github.com/vanus-labs/vanus/raft/raftpb"
 )
 
 type receiver struct {
 	recvch chan *raftpb.Message
 }
 
-func (r *receiver) Receive(ctx context.Context, msg *raftpb.Message, from uint64, endpoint string) {
+func (r *receiver) Receive(_ context.Context, msg *raftpb.Message, _ uint64, _ string) {
 	r.recvch <- msg
 }
 
@@ -46,9 +50,7 @@ func TestServer(t *testing.T) {
 
 		listener, err := net.Listen("tcp", fmt.Sprintf(":%d", serverPort))
 		if err != nil {
-			log.Error(context.Background(), "failed to listen", map[string]interface{}{
-				"error": err,
-			})
+			log.Error().Err(err).Msg("failed to listen")
 			os.Exit(-1)
 		}
 		// So(err, ShouldBeNil)

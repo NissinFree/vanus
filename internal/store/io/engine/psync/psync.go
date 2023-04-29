@@ -19,10 +19,10 @@ import (
 	"os"
 
 	// this project.
-	"github.com/linkall-labs/vanus/internal/primitive/container/conque/blocking"
-	"github.com/linkall-labs/vanus/internal/store/io"
-	"github.com/linkall-labs/vanus/internal/store/io/engine"
-	"github.com/linkall-labs/vanus/internal/store/io/zone"
+	"github.com/vanus-labs/vanus/internal/primitive/container/conque/blocking"
+	"github.com/vanus-labs/vanus/internal/store/io"
+	"github.com/vanus-labs/vanus/internal/store/io/engine"
+	"github.com/vanus-labs/vanus/internal/store/io/zone"
 )
 
 type writeTask struct {
@@ -56,7 +56,7 @@ func (e *psync) Close() {
 	e.q.Close()
 }
 
-func (e *psync) WriteAt(z zone.Interface, b []byte, off int64, so, eo int, cb io.WriteCallback) {
+func (e *psync) WriteAt(z zone.Interface, b []byte, off int64, so, eo int, cb io.WriteCallback) { //nolint:revive // ok
 	// if eo != 0 && eo != len(b) {
 	// 	b = b[:eo]
 	// }

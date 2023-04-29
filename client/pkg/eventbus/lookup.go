@@ -15,16 +15,16 @@
 package eventbus
 
 import (
-	// standard libraries
+	// standard libraries.
 	"context"
 	"time"
 
-	// first-party libraries
-	"github.com/linkall-labs/vanus/observability/log"
+	// first-party libraries.
+	"github.com/vanus-labs/vanus/observability/log"
 
-	// this project
-	"github.com/linkall-labs/vanus/client/pkg/primitive"
-	"github.com/linkall-labs/vanus/client/pkg/record"
+	// this project.
+	"github.com/vanus-labs/vanus/client/pkg/primitive"
+	"github.com/vanus-labs/vanus/client/pkg/record"
 )
 
 type WritableLogsResult struct {
@@ -48,12 +48,11 @@ func (w *WritableLogsWatcher) Start() {
 func WatchWritableLogs(bus *eventbus) *WritableLogsWatcher {
 	ch := make(chan *WritableLogsResult, 1)
 	w := primitive.NewWatcher(30*time.Second, func() {
-		rs, err := bus.nameService.LookupWritableLogs(context.Background(), bus.cfg.Name)
-		log.Debug(context.Background(), "lookup writable logs", map[string]interface{}{
-			log.KeyError: err,
-			"eventbus":   bus.cfg.Name,
-			"logs":       rs,
-		})
+		rs, err := bus.nameService.LookupWritableLogs(context.Background(), bus.cfg.ID)
+		log.Debug().Err(err).
+			Uint64("eventbus_id", bus.cfg.ID).
+			Interface("logs", rs).
+			Msg("lookup writable logs")
 		ch <- &WritableLogsResult{
 			Eventlogs: rs,
 			Err:       err,
@@ -90,12 +89,11 @@ func (w *ReadableLogsWatcher) Start() {
 func WatchReadableLogs(bus *eventbus) *ReadableLogsWatcher {
 	ch := make(chan *ReadableLogsResult, 1)
 	w := primitive.NewWatcher(30*time.Second, func() {
-		rs, err := bus.nameService.LookupReadableLogs(context.Background(), bus.cfg.Name)
-		log.Debug(context.Background(), "lookup readable logs", map[string]interface{}{
-			log.KeyError: err,
-			"eventbus":   bus.cfg.Name,
-			"logs":       rs,
-		})
+		rs, err := bus.nameService.LookupReadableLogs(context.Background(), bus.cfg.ID)
+		log.Debug().Err(err).
+			Uint64("eventbus_id", bus.cfg.ID).
+			Interface("logs", rs).
+			Msg("lookup readable logs")
 		ch <- &ReadableLogsResult{
 			Eventlogs: rs,
 			Err:       err,

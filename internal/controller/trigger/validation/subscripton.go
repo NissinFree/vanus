@@ -19,21 +19,29 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/linkall-labs/vanus/internal/primitive"
-	"github.com/linkall-labs/vanus/internal/primitive/cel"
-	"github.com/linkall-labs/vanus/internal/primitive/transform/arg"
-	"github.com/linkall-labs/vanus/internal/primitive/transform/runtime"
-	"github.com/linkall-labs/vanus/pkg/errors"
-	ctrlpb "github.com/linkall-labs/vanus/proto/pkg/controller"
-	metapb "github.com/linkall-labs/vanus/proto/pkg/meta"
-
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	cesqlparser "github.com/cloudevents/sdk-go/sql/v2/parser"
 	"google.golang.org/api/idtoken"
 	"google.golang.org/api/option"
+
+	"github.com/vanus-labs/vanus/internal/primitive/vanus"
+	"github.com/vanus-labs/vanus/pkg/errors"
+	ctrlpb "github.com/vanus-labs/vanus/proto/pkg/controller"
+	metapb "github.com/vanus-labs/vanus/proto/pkg/meta"
+
+	"github.com/vanus-labs/vanus/internal/primitive"
+	"github.com/vanus-labs/vanus/internal/primitive/cel"
+	"github.com/vanus-labs/vanus/internal/primitive/transform/arg"
+	"github.com/vanus-labs/vanus/internal/primitive/transform/runtime"
 )
 
 func ValidateSubscriptionRequest(ctx context.Context, request *ctrlpb.SubscriptionRequest) error {
+	if request.NamespaceId == vanus.EmptyID().Uint64() {
+		return errors.ErrInvalidRequest.WithMessage("namespace is empty")
+	}
+	if request.EventbusId == vanus.EmptyID().Uint64() {
+		return errors.ErrInvalidRequest.WithMessage("eventbus is empty")
+	}
 	if err := ValidateFilterList(ctx, request.Filters); err != nil {
 		return errors.ErrInvalidRequest.WithMessage("filters is invalid").Wrap(err)
 	}
@@ -46,22 +54,17 @@ func ValidateSubscriptionRequest(ctx context.Context, request *ctrlpb.Subscripti
 	if err := validateSinkCredential(ctx, request.Sink, request.SinkCredential); err != nil {
 		return err
 	}
-	if request.EventBus == "" {
-		return errors.ErrInvalidRequest.WithMessage("eventbus is empty")
-	}
 	if request.Name == "" {
 		return errors.ErrInvalidRequest.WithMessage("name is empty")
 	}
 	if err := validateSubscriptionConfig(ctx, request.Config); err != nil {
 		return err
 	}
-	if err := validateTransformer(ctx, request.Transformer); err != nil {
-		return err
-	}
-	return nil
+
+	return validateTransformer(ctx, request.Transformer)
 }
 
-func validateProtocol(ctx context.Context, protocol metapb.Protocol) error {
+func validateProtocol(_ context.Context, protocol metapb.Protocol) error {
 	switch protocol {
 	case metapb.Protocol_HTTP:
 	case metapb.Protocol_AWS_LAMBDA:
@@ -74,10 +77,11 @@ func validateProtocol(ctx context.Context, protocol metapb.Protocol) error {
 	return nil
 }
 
-func ValidateSinkAndProtocol(ctx context.Context,
+func ValidateSinkAndProtocol(_ context.Context,
 	sink string,
 	protocol metapb.Protocol,
-	credential *metapb.SinkCredential) error {
+	credential *metapb.SinkCredential,
+) error {
 	if sink == "" {
 		return errors.ErrInvalidRequest.WithMessage("sink is empty")
 	}
@@ -113,11 +117,14 @@ func validateSinkCredential(ctx context.Context, sink string, credential *metapb
 	switch credential.CredentialType {
 	case metapb.SinkCredential_None:
 	case metapb.SinkCredential_PLAIN:
-		if credential.GetPlain().GetIdentifier() == "" || credential.GetPlain().GetSecret() == "" {
-			return errors.ErrInvalidRequest.WithMessage("sink credential type is plain,Identifier and Secret can not empty")
+		if credential.GetPlain().GetIdentifier() == "" ||
+			credential.GetPlain().GetSecret() == "" {
+			return errors.ErrInvalidRequest.WithMessage(
+				"sink credential type is plain,Identifier and Secret can not empty")
 		}
 	case metapb.SinkCredential_AWS:
-		if credential.GetAws().GetAccessKeyId() == "" || credential.GetAws().GetSecretAccessKey() == "" {
+		if credential.GetAws().GetAccessKeyId() == "" ||
+			credential.GetAws().GetSecretAccessKey() == "" {
 			return errors.ErrInvalidRequest.
 				WithMessage("sink credential type is aws,accessKeyId and SecretAccessKey can not empty")
 		}
@@ -127,7 +134,8 @@ func validateSinkCredential(ctx context.Context, sink string, credential *metapb
 			return errors.ErrInvalidRequest.
 				WithMessage("sink credential type is gcloud,credential json can not empty")
 		}
-		_, err := idtoken.NewTokenSource(ctx, sink, option.WithCredentialsJSON([]byte(credentialJSON)))
+		_, err := idtoken.NewTokenSource(ctx, sink,
+			option.WithCredentialsJSON([]byte(credentialJSON)))
 		if err != nil {
 			return errors.ErrInvalidRequest.
 				WithMessage("gcloud credential json invalid").Wrap(err)
@@ -138,7 +146,7 @@ func validateSinkCredential(ctx context.Context, sink string, credential *metapb
 	return nil
 }
 
-func validateSubscriptionConfig(ctx context.Context, cfg *metapb.SubscriptionConfig) error {
+func validateSubscriptionConfig(_ context.Context, cfg *metapb.SubscriptionConfig) error {
 	if cfg == nil {
 		return nil
 	}
@@ -146,7 +154,8 @@ func validateSubscriptionConfig(ctx context.Context, cfg *metapb.SubscriptionCon
 	case metapb.SubscriptionConfig_LATEST, metapb.SubscriptionConfig_EARLIEST:
 	case metapb.SubscriptionConfig_TIMESTAMP:
 		if cfg.OffsetTimestamp == nil {
-			return errors.ErrInvalidRequest.WithMessage("offset type is timestamp, offset timestamp can not be nil")
+			return errors.ErrInvalidRequest.WithMessage(
+				"offset type is timestamp, offset timestamp can not be nil")
 		}
 	default:
 		return errors.ErrInvalidRequest.WithMessage("offset type is invalid")
@@ -158,7 +167,7 @@ func validateSubscriptionConfig(ctx context.Context, cfg *metapb.SubscriptionCon
 	return nil
 }
 
-func validateTransformer(ctx context.Context, transformer *metapb.Transformer) error {
+func validateTransformer(_ context.Context, transformer *metapb.Transformer) error {
 	if transformer == nil {
 		return nil
 	}
@@ -238,7 +247,7 @@ func ValidateFilter(ctx context.Context, f *metapb.Filter) error {
 	return nil
 }
 
-func validateCel(ctx context.Context, expression string) (err error) {
+func validateCel(_ context.Context, expression string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = errors.ErrCelExpression.WithMessage(expression)
@@ -250,7 +259,7 @@ func validateCel(ctx context.Context, expression string) (err error) {
 	return err
 }
 
-func validateCeSQL(ctx context.Context, expression string) (err error) {
+func validateCeSQL(_ context.Context, expression string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = errors.ErrCeSQLExpression.WithMessage(expression)
@@ -268,10 +277,12 @@ func validateAttributeMap(attributeName string, attribute map[string]string) err
 	}
 	for k, v := range attribute {
 		if k == "" {
-			return errors.ErrFilterAttributeIsEmpty.WithMessage(attributeName + " filter dialect attribute name must not empty")
+			return errors.ErrFilterAttributeIsEmpty.WithMessage(
+				attributeName + " filter dialect attribute name must not empty")
 		}
 		if v == "" {
-			return errors.ErrFilterAttributeIsEmpty.WithMessage(attributeName + " filter dialect attribute value must not empty")
+			return errors.ErrFilterAttributeIsEmpty.WithMessage(
+				attributeName + " filter dialect attribute value must not empty")
 		}
 	}
 	return nil

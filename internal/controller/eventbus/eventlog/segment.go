@@ -19,11 +19,10 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/linkall-labs/vanus/observability/log"
-	metapb "github.com/linkall-labs/vanus/proto/pkg/meta"
-
-	"github.com/linkall-labs/vanus/internal/controller/eventbus/metadata"
-	"github.com/linkall-labs/vanus/internal/primitive/vanus"
+	"github.com/vanus-labs/vanus/internal/controller/eventbus/metadata"
+	"github.com/vanus-labs/vanus/internal/primitive/vanus"
+	"github.com/vanus-labs/vanus/observability/log"
+	metapb "github.com/vanus-labs/vanus/proto/pkg/meta"
 )
 
 type SegmentState string
@@ -39,7 +38,7 @@ const (
 type Segment struct {
 	ID                 vanus.ID      `json:"id,omitempty"`
 	Capacity           int64         `json:"capacity,omitempty"`
-	EventLogID         vanus.ID      `json:"event_log_id,omitempty"`
+	EventlogID         vanus.ID      `json:"event_log_id,omitempty"`
 	PreviousSegmentID  vanus.ID      `json:"previous_segment_id,omitempty"`
 	NextSegmentID      vanus.ID      `json:"next_segment_id,omitempty"`
 	StartOffsetInLog   int64         `json:"start_offset_in_log,omitempty"`
@@ -86,12 +85,12 @@ func (seg *Segment) isNeedUpdate(newSeg Segment) bool {
 	}
 	// TODO(wenfeng): follow state shift
 	if newSeg.State != "" && seg.State != newSeg.State {
-		log.Info(context.Background(), "Update segment by state.", map[string]interface{}{
-			log.KeySegmentID: newSeg.ID,
-			"event_num":      newSeg.Number,
-			"event_size":     newSeg.Size,
-			"state":          newSeg.State,
-		})
+		log.Info().
+			Interface(log.KeySegmentID, newSeg.ID).
+			Int32("event_num", newSeg.Number).
+			Int64("event_size", newSeg.Size).
+			Interface("state", newSeg.State).
+			Msg("Update segment by state")
 		seg.State = newSeg.State
 		needed = true
 	}
@@ -119,7 +118,7 @@ func (seg *Segment) Copy() Segment {
 	return Segment{
 		ID:                 seg.ID,
 		Capacity:           seg.Capacity,
-		EventLogID:         seg.EventLogID,
+		EventlogID:         seg.EventlogID,
 		PreviousSegmentID:  seg.PreviousSegmentID,
 		NextSegmentID:      seg.NextSegmentID,
 		StartOffsetInLog:   seg.StartOffsetInLog,
@@ -162,7 +161,7 @@ func Convert2ProtoSegment(ctx context.Context, ins ...Segment) []*metapb.Segment
 			Id:                       seg.ID.Uint64(),
 			PreviousSegmentId:        seg.PreviousSegmentID.Uint64(),
 			NextSegmentId:            seg.NextSegmentID.Uint64(),
-			EventLogId:               seg.EventLogID.Uint64(),
+			EventlogId:               seg.EventlogID.Uint64(),
 			StartOffsetInLog:         seg.StartOffsetInLog,
 			EndOffsetInLog:           seg.StartOffsetInLog + int64(seg.Number),
 			Size:                     seg.Size,
@@ -171,7 +170,7 @@ func Convert2ProtoSegment(ctx context.Context, ins ...Segment) []*metapb.Segment
 			Replicas:                 blocks,
 			State:                    string(seg.State),
 			FirstEventBornAtByUnixMs: seg.FirstEventBornTime.UnixMilli(),
-			LastEvnetBornAtByUnixMs:  seg.LastEventBornTime.UnixMilli(),
+			LastEventBornAtByUnixMs:  seg.LastEventBornTime.UnixMilli(),
 		}
 		if seg.GetLeaderBlock() != nil {
 			segs[idx].LeaderBlockId = seg.GetLeaderBlock().ID.Uint64()

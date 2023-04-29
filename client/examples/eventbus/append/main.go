@@ -22,12 +22,16 @@ import (
 	// third-party project.
 	ce "github.com/cloudevents/sdk-go/v2"
 
+	// first-party libraries.
+	"github.com/vanus-labs/vanus/pkg/primitive"
+	"github.com/vanus-labs/vanus/proto/pkg/cloudevents"
+	"github.com/vanus-labs/vanus/proto/pkg/codec"
+
 	// this project.
-	"github.com/linkall-labs/vanus/client"
-	"github.com/linkall-labs/vanus/client/pkg/option"
-	"github.com/linkall-labs/vanus/client/pkg/policy"
-	"github.com/linkall-labs/vanus/proto/pkg/cloudevents"
-	"github.com/linkall-labs/vanus/proto/pkg/codec"
+	"github.com/vanus-labs/vanus/client"
+	"github.com/vanus-labs/vanus/client/pkg/api"
+	"github.com/vanus-labs/vanus/client/pkg/option"
+	"github.com/vanus-labs/vanus/client/pkg/policy"
 )
 
 func main() {
@@ -35,7 +39,11 @@ func main() {
 
 	c := client.Connect([]string{"localhost:2048"})
 
-	bus := c.Eventbus(ctx, "quick-start")
+	eventbusID, err := primitive.NewIDFromString("0000002689000012")
+	if err != nil {
+		panic("invalid id")
+	}
+	bus := c.Eventbus(ctx, api.WithName("quick-start"), api.WithID(eventbusID.Uint64()))
 	w := bus.Writer()
 	// Create an Event.
 	event := ce.NewEvent()

@@ -17,10 +17,11 @@ package arg
 import (
 	"strings"
 
-	"github.com/linkall-labs/vanus/internal/primitive/transform/context"
-	"github.com/linkall-labs/vanus/internal/trigger/util"
-	pkgUtil "github.com/linkall-labs/vanus/pkg/util"
-	"github.com/pkg/errors"
+	"github.com/vanus-labs/vanus/pkg/errors"
+	pkgUtil "github.com/vanus-labs/vanus/pkg/util"
+
+	"github.com/vanus-labs/vanus/internal/primitive/transform/context"
+	"github.com/vanus-labs/vanus/internal/trigger/util"
 )
 
 type eventAttribute struct {
@@ -44,6 +45,7 @@ func newEventAttribute(name string) (Arg, error) {
 func (arg eventAttribute) Type() Type {
 	return EventAttribute
 }
+
 func (arg eventAttribute) Name() string {
 	return arg.attr
 }
@@ -80,7 +82,8 @@ func newEventData(name string) Arg {
 			eventData{
 				path:     "",
 				original: name,
-			}}
+			},
+		}
 	}
 	return eventData{
 		path:     name[7:],
@@ -103,7 +106,7 @@ func (arg eventData) Original() string {
 func (arg eventData) Evaluate(ceCtx *context.EventContext) (interface{}, error) {
 	v, err := util.LookupData(ceCtx.Data, EventArgPrefix+arg.path)
 	if err != nil {
-		if errors.Is(err, util.ErrKeyNotFound) {
+		if errors.Is(err, errors.ErrJSONPathNotExist) {
 			return nil, ErrArgValueNil
 		}
 		return nil, err

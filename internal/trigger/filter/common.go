@@ -15,38 +15,43 @@
 package filter
 
 import (
-	"context"
+	"fmt"
+	"reflect"
 
 	ce "github.com/cloudevents/sdk-go/v2"
-	"github.com/linkall-labs/vanus/internal/trigger/util"
-	"github.com/linkall-labs/vanus/observability/log"
-	"github.com/tidwall/gjson"
+	"github.com/cloudevents/sdk-go/v2/types"
+
+	"github.com/vanus-labs/vanus/internal/trigger/util"
+	"github.com/vanus-labs/vanus/observability/log"
+	putil "github.com/vanus-labs/vanus/pkg/util"
 )
 
 type commonFilter struct {
 	attribute     map[string]string
+	dataValue     string
 	data          map[string]string
 	meetCondition meetCondition
 }
 
-type meetCondition func(exist bool, value interface{}, compareValue string) bool
+type meetCondition func(value, compareValue string) bool
 
 func newCommonFilter(value map[string]string, meetCondition meetCondition) *commonFilter {
 	attribute := map[string]string{}
 	data := map[string]string{}
+	var dataValue string
 	for attr, v := range value {
 		if attr == "" || v == "" {
-			log.Info(context.Background(), "new filter but has empty ", map[string]interface{}{
-				"attr":  attr,
-				"value": v,
-			})
+			log.Info().Str("attr", attr).
+				Str("value", v).
+				Msg("new filter but has empty ")
 			return nil
 		}
 		switch {
 		case attr == "data":
-			data[""] = v
+			dataValue = v
 		case len(attr) > 4 && attr[:5] == "data.":
 			attr = attr[5:]
+			attr = "$." + attr
 			data[attr] = v
 		default:
 			// event attribute.
@@ -56,6 +61,7 @@ func newCommonFilter(value map[string]string, meetCondition meetCondition) *comm
 	return &commonFilter{
 		attribute:     attribute,
 		data:          data,
+		dataValue:     dataValue,
 		meetCondition: meetCondition,
 	}
 }
@@ -63,22 +69,67 @@ func newCommonFilter(value map[string]string, meetCondition meetCondition) *comm
 func (filter *commonFilter) Filter(event ce.Event) Result {
 	for attr, v := range filter.attribute {
 		value, ok := util.LookupAttribute(event, attr)
-		if !filter.meetCondition(ok, value, v) {
+		if !ok {
+			return false
+		}
+		strValue, err := attrValue2String(value)
+		if err != nil {
+			log.Info().Str("attr", attr).Err(err).Msg("filter attr value to string failed")
+			return false
+		}
+		if !filter.meetCondition(strValue, v) {
 			return FailFilter
 		}
 	}
+	if filter.dataValue != "" && !filter.meetCondition(string(event.Data()), filter.dataValue) {
+		return FailFilter
+	}
+	if len(filter.data) == 0 {
+		return PassFilter
+	}
+	obj, err := putil.ParseJSON(event.Data())
+	if err != nil {
+		log.Info().Str("data", string(event.Data())).Err(err).Msg("filter parse data error")
+		return false
+	}
 	for attr, v := range filter.data {
-		if attr == "" {
-			// event data
-			if !filter.meetCondition(true, string(event.Data()), v) {
-				return FailFilter
-			}
-			continue
+		value, err := putil.GetJSONValue(obj, attr)
+		if err != nil {
+			log.Info().Str("path", attr).Err(err).Msg("filter parse json path error")
+			return false
 		}
-		result := gjson.GetBytes(event.Data(), attr)
-		if !filter.meetCondition(result.Exists(), result.Value(), v) {
+		strValue, err := dataValue2String(value)
+		if err != nil {
+			log.Info().Str("path", attr).Err(err).Msg("filter data value to string failed")
+			return false
+		}
+		if !filter.meetCondition(strValue, v) {
 			return FailFilter
 		}
 	}
 	return PassFilter
+}
+
+func dataValue2String(value interface{}) (string, error) {
+	v, ok := value.(string)
+	if ok {
+		return v, nil
+	}
+	reflectValue := reflect.ValueOf(value)
+	switch reflectValue.Kind() {
+	case reflect.Float32, reflect.Float64, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr, reflect.Bool:
+		return fmt.Sprintf("%v", value), nil
+	default:
+		return "", fmt.Errorf("filter value %s can't convert to string", reflectValue.Kind())
+	}
+}
+
+func attrValue2String(value interface{}) (string, error) {
+	v, ok := value.(string)
+	if ok {
+		return v, nil
+	}
+	val, err := types.Format(value)
+	return val, err
 }

@@ -17,6 +17,7 @@ package primitive
 const (
 	SystemEventbusNamePrefix = "__"
 	TimerEventbusName        = SystemEventbusNamePrefix + "Timer_RS"
+	RetryEventbusName        = SystemEventbusNamePrefix + "retry_eb"
 
 	XVanus               = "xvanus"
 	XVanusEventbus       = XVanus + "eventbus"
@@ -29,4 +30,9 @@ const (
 	DeadLetterReason  = XVanus + "dlreason"
 
 	MaxRetryAttempts = 32
+
+	DefaultNamespace = "default"
+	SystemNamespace  = "vanus-system"
+
+	DefaultUser = "admin"
 )

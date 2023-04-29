@@ -19,8 +19,31 @@ import (
 	"time"
 )
 
+type Value interface {
+	Size() int
+	Value() []byte
+}
+
+type ValueMarshaler interface {
+	Value
+
+	MarshalTo(buf []byte) int
+}
+
+type BytesValue []byte
+
+var _ Value = BytesValue(nil)
+
+func (bv BytesValue) Size() int {
+	return len(bv)
+}
+
+func (bv BytesValue) Value() []byte {
+	return bv
+}
+
 type ExtensionAttributeCallback interface {
-	OnAttribute(attr, val []byte)
+	OnAttribute(attr []byte, val Value)
 }
 
 // Entry is a record of data stored in a Block.
@@ -64,31 +87,31 @@ type EmptyEntry struct{}
 // Mark sure EmptyEntry implements Entry.
 var _ Entry = (*EmptyEntry)(nil)
 
-func (e *EmptyEntry) Get(ordinal int) interface{} {
+func (e *EmptyEntry) Get(ordinal int) interface{} { //nolint:revive // ok
 	return nil
 }
 
-func (e *EmptyEntry) GetBytes(ordinal int) []byte {
+func (e *EmptyEntry) GetBytes(ordinal int) []byte { //nolint:revive // ok
 	return nil
 }
 
-func (e *EmptyEntry) GetString(ordinal int) string {
+func (e *EmptyEntry) GetString(ordinal int) string { //nolint:revive // ok
 	return ""
 }
 
-func (e *EmptyEntry) GetUint16(ordinal int) uint16 {
+func (e *EmptyEntry) GetUint16(ordinal int) uint16 { //nolint:revive // ok
 	return 0
 }
 
-func (e *EmptyEntry) GetUint64(ordinal int) uint64 {
+func (e *EmptyEntry) GetUint64(ordinal int) uint64 { //nolint:revive // ok
 	return 0
 }
 
-func (e *EmptyEntry) GetInt64(ordinal int) int64 {
+func (e *EmptyEntry) GetInt64(ordinal int) int64 { //nolint:revive // ok
 	return 0
 }
 
-func (e *EmptyEntry) GetTime(ordinal int) time.Time {
+func (e *EmptyEntry) GetTime(ordinal int) time.Time { //nolint:revive // ok
 	return time.Time{}
 }
 
@@ -96,7 +119,7 @@ func (e *EmptyEntry) GetExtensionAttribute([]byte) []byte {
 	return nil
 }
 
-func (e *EmptyEntry) RangeExtensionAttributes(cb ExtensionAttributeCallback) {
+func (e *EmptyEntry) RangeExtensionAttributes(ordinal ExtensionAttributeCallback) { //nolint:revive // ok
 }
 
 type EmptyEntryExt struct {
@@ -110,7 +133,7 @@ func (e *EmptyEntryExt) OptionalAttributeCount() int {
 	return 0
 }
 
-func (e *EmptyEntryExt) RangeOptionalAttributes(cb OptionalAttributeCallback) {
+func (e *EmptyEntryExt) RangeOptionalAttributes(ordinal OptionalAttributeCallback) { //nolint:revive // ok
 }
 
 func (e *EmptyEntryExt) ExtensionAttributeCount() int {
@@ -172,12 +195,12 @@ func (w *EntryExtWrapper) ExtensionAttributeCount() int {
 	return w.E.ExtensionAttributeCount()
 }
 
-type OnExtensionAttributeFunc func(attr, val []byte)
+type OnExtensionAttributeFunc func(attr []byte, val Value)
 
 // Make sure ExtensionAttributesFunc implements OptionalAttributesCallback.
 var _ ExtensionAttributeCallback = (OnExtensionAttributeFunc)(nil)
 
-func (f OnExtensionAttributeFunc) OnAttribute(attr, val []byte) {
+func (f OnExtensionAttributeFunc) OnAttribute(attr []byte, val Value) {
 	f(attr, val)
 }
 

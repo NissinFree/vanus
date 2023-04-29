@@ -15,7 +15,7 @@
 package eventbus
 
 import (
-	// standard libraries
+	// standard libraries.
 	"context"
 	"encoding/base64"
 	"encoding/binary"
@@ -23,23 +23,22 @@ import (
 	"io"
 	"sync"
 
-	// third-party libraries
-
+	// third-party libraries.
 	"github.com/scylladb/go-set/u64set"
 	"go.opentelemetry.io/otel/trace"
 
-	// first-party libraries
-	"github.com/linkall-labs/vanus/observability/log"
-	"github.com/linkall-labs/vanus/observability/tracing"
-	"github.com/linkall-labs/vanus/pkg/errors"
-	"github.com/linkall-labs/vanus/proto/pkg/cloudevents"
+	// first-party libraries.
+	"github.com/vanus-labs/vanus/observability/log"
+	"github.com/vanus-labs/vanus/observability/tracing"
+	"github.com/vanus-labs/vanus/pkg/errors"
+	"github.com/vanus-labs/vanus/proto/pkg/cloudevents"
 
-	// this project
-	eb "github.com/linkall-labs/vanus/client/internal/vanus/eventbus"
-	el "github.com/linkall-labs/vanus/client/internal/vanus/eventlog"
-	"github.com/linkall-labs/vanus/client/pkg/api"
-	"github.com/linkall-labs/vanus/client/pkg/eventlog"
-	"github.com/linkall-labs/vanus/client/pkg/policy"
+	// this project.
+	eb "github.com/vanus-labs/vanus/client/internal/vanus/eventbus"
+	el "github.com/vanus-labs/vanus/client/internal/vanus/eventlog"
+	"github.com/vanus-labs/vanus/client/pkg/api"
+	"github.com/vanus-labs/vanus/client/pkg/eventlog"
+	"github.com/vanus-labs/vanus/client/pkg/policy"
 )
 
 func NewEventbus(cfg *eb.Config) *eventbus {
@@ -65,9 +64,7 @@ func NewEventbus(cfg *eb.Config) *eventbus {
 		for {
 			re, ok := <-ch
 			if !ok {
-				log.Debug(context.Background(), "eventbus quits writable watcher", map[string]interface{}{
-					"eventbus": bus.cfg.Name,
-				})
+				log.Debug().Uint64("eventbus_id", bus.cfg.ID).Msg("eventbus quits writable watcher")
 				break
 			}
 
@@ -87,9 +84,7 @@ func NewEventbus(cfg *eb.Config) *eventbus {
 		for {
 			re, ok := <-ch
 			if !ok {
-				log.Debug(context.Background(), "eventbus quits readable watcher", map[string]interface{}{
-					"eventbus": bus.cfg.Name,
-				})
+				log.Debug().Uint64("eventbus_id", bus.cfg.ID).Msg("eventbus quits readable watcher")
 				break
 			}
 
@@ -126,7 +121,7 @@ type eventbus struct {
 	tracer *tracing.Tracer
 }
 
-// make sure eventbus implements EventBus.
+// make sure eventbus implements api.Eventbus.
 var _ api.Eventbus = (*eventbus)(nil)
 
 func (b *eventbus) defaultWriteOptions() *api.WriteOptions {
@@ -236,8 +231,8 @@ func (b *eventbus) ListLog(ctx context.Context, opts ...api.LogOption) ([]api.Ev
 	}
 }
 
-func (b *eventbus) Name() string {
-	return b.cfg.Name
+func (b *eventbus) ID() uint64 {
+	return b.cfg.ID
 }
 
 func (b *eventbus) Close(ctx context.Context) {
@@ -309,7 +304,7 @@ func (b *eventbus) updateWritableLogs(ctx context.Context, re *WritableLogsResul
 			Endpoints: b.cfg.Endpoints,
 			ID:        logID,
 		}
-		lws[logID] = eventlog.NewEventLog(cfg)
+		lws[logID] = eventlog.NewEventlog(cfg)
 		return true
 	})
 	b.setWritableLogs(s, lws)
@@ -401,7 +396,7 @@ func (b *eventbus) updateReadableLogs(ctx context.Context, re *ReadableLogsResul
 			Endpoints: b.cfg.Endpoints,
 			ID:        logID,
 		}
-		lws[logID] = eventlog.NewEventLog(cfg)
+		lws[logID] = eventlog.NewEventlog(cfg)
 		return true
 	})
 	b.setReadableLogs(s, lws)
@@ -448,7 +443,7 @@ func (w *busWriter) Append(ctx context.Context, events *cloudevents.CloudEventBa
 	_ctx, span := w.tracer.Start(ctx, "Append")
 	defer span.End()
 
-	var writeOpts = w.opts
+	writeOpts := w.opts
 	if len(opts) > 0 {
 		writeOpts = w.opts.Copy()
 		for _, opt := range opts {
@@ -459,21 +454,16 @@ func (w *busWriter) Append(ctx context.Context, events *cloudevents.CloudEventBa
 	// 1. pick a writer of eventlog
 	lw, err := w.pickWritableLog(_ctx, writeOpts)
 	if err != nil {
-		log.Error(context.Background(), "pick writable log failed", map[string]interface{}{
-			log.KeyError: err,
-			"eventbus":   w.ebus.Name(),
-		})
+		log.Error().Err(err).Uint64("eventbus_id", w.ebus.ID()).Msg("pick writable log failed")
 		return nil, err
 	}
 
 	// 2. append the event to the eventlog
 	offsets, err := lw.Append(_ctx, events)
 	if err != nil {
-		log.Error(context.Background(), "logwriter append failed", map[string]interface{}{
-			log.KeyError:  err,
-			"eventbus":    w.ebus.Name(),
-			"eventlog-id": lw.Log().ID(),
-		})
+		log.Error().Err(err).
+			Uint64("eventbus_id", w.ebus.ID()).
+			Uint64("eventlog_id", lw.Log().ID()).Msg("log-writer append failed")
 		return nil, err
 	}
 
@@ -536,20 +526,18 @@ func (r *busReader) Read(ctx context.Context, opts ...api.ReadOption) (events *c
 	// 1. pick a reader of eventlog
 	lr, err := r.pickReadableLog(_ctx, readOpts)
 	if err != nil {
-		log.Error(context.Background(), "pick readable log failed", map[string]interface{}{
-			log.KeyError: err,
-			"eventbus":   r.ebus.Name(),
-		})
+		log.Error().Err(err).
+			Uint64("eventbus_id", r.ebus.ID()).
+			Msg("pick readable log failed")
 		return nil, 0, 0, err
 	}
 
 	// TODO(jiangkai): refactor eventlog interface to avoid seek every time, by jiangkai, 2022.10.24
 	off, err = lr.Seek(_ctx, readOpts.Policy.Offset(), io.SeekStart)
 	if err != nil {
-		log.Error(context.Background(), "seek offset failed", map[string]interface{}{
-			log.KeyError: err,
-			"eventbus":   r.ebus.Name(),
-		})
+		log.Error().Err(err).
+			Uint64("eventbus_id", r.ebus.ID()).
+			Msg("seek offset failed")
 		return nil, 0, 0, err
 	}
 

@@ -19,8 +19,8 @@ import (
 	"encoding/binary"
 
 	// this project.
-	"github.com/linkall-labs/vanus/internal/store/block"
-	"github.com/linkall-labs/vanus/internal/store/vsb/index"
+	"github.com/vanus-labs/vanus/internal/store/block"
+	"github.com/vanus-labs/vanus/internal/store/vsb/index"
 )
 
 type indexEntryEncoder struct {
@@ -57,7 +57,7 @@ type indexEntryDecoder struct {
 // Make sure indexEntryDecoder implements RecordDataDecoder.
 var _ RecordDataDecoder = (*indexEntryDecoder)(nil)
 
-func (d *indexEntryDecoder) Unmarshal(t uint16, offset int, data []byte) (block.Entry, error) {
+func (d *indexEntryDecoder) Unmarshal(t uint16, offset int, data []byte) (block.Entry, error) { //nolint:revive // ok
 	payload := data
 	if offset > 0 {
 		payload = data[offset:]

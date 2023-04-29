@@ -19,14 +19,14 @@ import (
 	"context"
 
 	// this project.
-	"github.com/linkall-labs/vanus/internal/store/block"
-	"github.com/linkall-labs/vanus/internal/store/raft/storage"
+	"github.com/vanus-labs/vanus/internal/store/block"
+	"github.com/vanus-labs/vanus/internal/store/raft/storage"
 )
 
 // Make sure appender implements storage.SnapshotOperator.
 var _ storage.SnapshotOperator = (*appender)(nil)
 
-func (a *appender) GetSnapshot(index uint64) ([]byte, error) {
+func (a *appender) GetSnapshot(_ uint64) ([]byte, error) {
 	ctx := context.Background()
 	snap, err := a.raw.Snapshot(ctx)
 	if err != nil {

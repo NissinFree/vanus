@@ -1,32 +1,38 @@
-module github.com/linkall-labs/vanus/pkg
+module github.com/vanus-labs/vanus/pkg
 
-go 1.18
+go 1.19
 
 require (
 	github.com/golang/mock v1.6.0
-	github.com/linkall-labs/vanus/observability v0.5.7
-	github.com/linkall-labs/vanus/proto v0.5.7
+	github.com/ohler55/ojg v1.18.4
 	github.com/pkg/errors v0.9.1
-	github.com/smartystreets/goconvey v1.7.2
-	google.golang.org/grpc v1.51.0
-	google.golang.org/protobuf v1.28.1
+	github.com/smartystreets/goconvey v1.8.0
+	github.com/vanus-labs/vanus/observability v0.8.0
+	github.com/vanus-labs/vanus/proto v0.8.0
+	golang.org/x/oauth2 v0.7.0
+	google.golang.org/grpc v1.54.0
+	google.golang.org/protobuf v1.30.0
 )
 
 require (
-	github.com/golang/protobuf v1.5.2 // indirect
-	github.com/gopherjs/gopherjs v0.0.0-20181017120253-0766667cb4d1 // indirect
+	github.com/golang/protobuf v1.5.3 // indirect
+	github.com/gopherjs/gopherjs v1.17.2 // indirect
 	github.com/jtolds/gls v4.20.0+incompatible // indirect
-	github.com/sirupsen/logrus v1.9.0 // indirect
-	github.com/smartystreets/assertions v1.2.0 // indirect
-	github.com/stretchr/testify v1.8.1 // indirect
-	golang.org/x/net v0.4.0 // indirect
-	golang.org/x/sys v0.3.0 // indirect
-	golang.org/x/text v0.5.0 // indirect
-	google.golang.org/genproto v0.0.0-20221027153422-115e99e71e1c // indirect
+	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mattn/go-isatty v0.0.17 // indirect
+	github.com/rs/zerolog v1.29.1 // indirect
+	github.com/smartystreets/assertions v1.13.1 // indirect
+	golang.org/x/net v0.9.0 // indirect
+	golang.org/x/sys v0.7.0 // indirect
+	golang.org/x/text v0.9.0 // indirect
+	google.golang.org/appengine v1.6.7 // indirect
+	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 // indirect
 )
 
 replace (
-	github.com/linkall-labs/vanus/observability => ../observability
-	github.com/linkall-labs/vanus/proto => ../proto
-	github.com/linkall-labs/vanus/raft => ../raft
+	github.com/vanus-labs/vanus/observability => ../observability
+	github.com/vanus-labs/vanus/proto => ../proto
+	github.com/vanus-labs/vanus/raft => ../raft
 )
+
+replace github.com/vanus-labs/vanus => ../FORBIDDEN_DEPENDENCY

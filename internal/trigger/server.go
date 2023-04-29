@@ -19,17 +19,16 @@ import (
 	"os"
 	"time"
 
-	"github.com/linkall-labs/vanus/internal/convert"
-	"github.com/linkall-labs/vanus/internal/primitive"
-	"github.com/linkall-labs/vanus/internal/primitive/vanus"
-	"github.com/linkall-labs/vanus/observability/log"
-	"github.com/linkall-labs/vanus/pkg/errors"
-	pbtrigger "github.com/linkall-labs/vanus/proto/pkg/trigger"
+	"github.com/vanus-labs/vanus/observability/log"
+	"github.com/vanus-labs/vanus/pkg/errors"
+	pbtrigger "github.com/vanus-labs/vanus/proto/pkg/trigger"
+
+	"github.com/vanus-labs/vanus/internal/convert"
+	"github.com/vanus-labs/vanus/internal/primitive"
+	"github.com/vanus-labs/vanus/internal/primitive/vanus"
 )
 
-var (
-	_ pbtrigger.TriggerWorkerServer = &server{}
-)
+var _ pbtrigger.TriggerWorkerServer = &server{}
 
 type server struct {
 	worker    Worker
@@ -48,8 +47,9 @@ func NewTriggerServer(config Config) pbtrigger.TriggerWorkerServer {
 }
 
 func (s *server) Start(ctx context.Context,
-	request *pbtrigger.StartTriggerWorkerRequest) (*pbtrigger.StartTriggerWorkerResponse, error) {
-	log.Info(ctx, "worker server start ", map[string]interface{}{"request": request})
+	_ *pbtrigger.StartTriggerWorkerRequest,
+) (*pbtrigger.StartTriggerWorkerResponse, error) {
+	log.Info(ctx).Msg("worker server start ")
 	if s.state == primitive.ServerStateRunning {
 		return &pbtrigger.StartTriggerWorkerResponse{}, nil
 	}
@@ -62,78 +62,79 @@ func (s *server) Start(ctx context.Context,
 }
 
 func (s *server) Stop(ctx context.Context,
-	request *pbtrigger.StopTriggerWorkerRequest) (*pbtrigger.StopTriggerWorkerResponse, error) {
-	log.Info(ctx, "worker server stop ", map[string]interface{}{"request": request})
+	_ *pbtrigger.StopTriggerWorkerRequest,
+) (*pbtrigger.StopTriggerWorkerResponse, error) {
+	log.Info(ctx).Msg("worker server stop ")
 	s.stop(context.Background(), false)
 	os.Exit(1)
 	return &pbtrigger.StopTriggerWorkerResponse{}, nil
 }
 
 func (s *server) AddSubscription(ctx context.Context,
-	request *pbtrigger.AddSubscriptionRequest) (*pbtrigger.AddSubscriptionResponse, error) {
-	log.Info(ctx, "subscription add ", map[string]interface{}{"request": request.Id})
+	request *pbtrigger.AddSubscriptionRequest,
+) (*pbtrigger.AddSubscriptionResponse, error) {
+	log.Info(ctx).Msg("subscription add ")
 	if s.state != primitive.ServerStateRunning {
 		return nil, errors.ErrWorkerNotStart
 	}
 	subscription := convert.FromPbAddSubscription(request)
-	log.Info(ctx, "subscription add info ", map[string]interface{}{"subscription": subscription})
+	log.Info(ctx).Msg("subscription add info ")
 	err := s.worker.AddSubscription(ctx, subscription)
 	if err != nil {
-		log.Error(ctx, "add subscription error ", map[string]interface{}{
-			"subscription": subscription,
-			log.KeyError:   err,
-		})
+		log.Error(ctx).Err(err).
+			Interface("subscription", subscription).
+			Msg("add subscription error ")
 		return nil, err
 	}
 	return &pbtrigger.AddSubscriptionResponse{}, nil
 }
 
 func (s *server) RemoveSubscription(ctx context.Context,
-	request *pbtrigger.RemoveSubscriptionRequest) (*pbtrigger.RemoveSubscriptionResponse, error) {
-	log.Info(ctx, "subscription remove ", map[string]interface{}{"request": request})
+	request *pbtrigger.RemoveSubscriptionRequest,
+) (*pbtrigger.RemoveSubscriptionResponse, error) {
+	log.Info(ctx).Msg("subscription remove ")
 	if s.state != primitive.ServerStateRunning {
 		return nil, errors.ErrWorkerNotStart
 	}
 	err := s.worker.RemoveSubscription(ctx, vanus.NewIDFromUint64(request.SubscriptionId))
 	if err != nil {
-		log.Error(ctx, "remove subscription error", map[string]interface{}{
-			log.KeySubscriptionID: request.SubscriptionId,
-			log.KeyError:          err,
-		})
+		log.Error(ctx).Err(err).
+			Uint64(log.KeySubscriptionID, request.SubscriptionId).
+			Msg("remove subscription error")
 		return nil, err
 	}
 	return &pbtrigger.RemoveSubscriptionResponse{}, nil
 }
 
 func (s *server) PauseSubscription(ctx context.Context,
-	request *pbtrigger.PauseSubscriptionRequest) (*pbtrigger.PauseSubscriptionResponse, error) {
-	log.Info(ctx, "subscription pause ", map[string]interface{}{"request": request})
+	request *pbtrigger.PauseSubscriptionRequest,
+) (*pbtrigger.PauseSubscriptionResponse, error) {
+	log.Info(ctx).Msg("subscription pause ")
 	if s.state != primitive.ServerStateRunning {
 		return nil, errors.ErrWorkerNotStart
 	}
 	err := s.worker.PauseSubscription(ctx, vanus.NewIDFromUint64(request.SubscriptionId))
 	if err != nil {
-		log.Error(ctx, "pause subscription error", map[string]interface{}{
-			log.KeySubscriptionID: request.SubscriptionId,
-			log.KeyError:          err,
-		})
+		log.Error(ctx).Err(err).
+			Uint64(log.KeySubscriptionID, request.SubscriptionId).
+			Msg("pause subscription error")
 		return nil, err
 	}
 	return &pbtrigger.PauseSubscriptionResponse{}, nil
 }
 
 func (s *server) ResumeSubscription(ctx context.Context,
-	request *pbtrigger.ResumeSubscriptionRequest) (*pbtrigger.ResumeSubscriptionResponse, error) {
-	log.Info(ctx, "subscription resume ", map[string]interface{}{"request": request})
+	request *pbtrigger.ResumeSubscriptionRequest,
+) (*pbtrigger.ResumeSubscriptionResponse, error) {
+	log.Info(ctx).Msg("subscription resume ")
 	if s.state != primitive.ServerStateRunning {
 		return nil, errors.ErrWorkerNotStart
 	}
 	err := s.worker.StartSubscription(ctx, vanus.NewIDFromUint64(request.SubscriptionId))
 	if err != nil {
-		log.Error(ctx, "resume subscription error", map[string]interface{}{
-			log.KeySubscriptionID: request.SubscriptionId,
-			log.KeyError:          err,
-		})
+		log.Error(ctx).Err(err).
+			Uint64(log.KeySubscriptionID, request.SubscriptionId).
+			Msg("resume subscription error")
 		return nil, err
 	}
 	return &pbtrigger.ResumeSubscriptionResponse{}, nil
@@ -142,32 +143,29 @@ func (s *server) ResumeSubscription(ctx context.Context,
 func (s *server) Initialize(ctx context.Context) error {
 	err := s.worker.Init(ctx)
 	if err != nil {
-		log.Error(ctx, "worker init error", map[string]interface{}{
-			log.KeyError: err,
-		})
+		log.Error(ctx).Err(err).Msg("worker init error")
 		return err
 	}
 	err = s.worker.Register(ctx)
 	if err != nil {
-		log.Error(ctx, "register trigger worker error", map[string]interface{}{
-			"tcAddr":     s.config.ControllerAddr,
-			log.KeyError: err,
-		})
+		log.Error(ctx).Err(err).
+			Strs("tcAddr", s.config.ControllerAddr).
+			Msg("register trigger worker error")
 		return err
 	}
-	log.Info(ctx, "trigger worker register success", map[string]interface{}{
-		"triggerCtrlAddr":   s.config.ControllerAddr,
-		"triggerWorkerAddr": s.config.TriggerAddr,
-	})
+	log.Info(ctx).
+		Strs("tcAddr", s.config.ControllerAddr).
+		Str("triggerWorkerAddr", s.config.TriggerAddr).
+		Msg("trigger worker register success")
 	s.state = primitive.ServerStateStarted
 	s.startTime = time.Now()
 	return nil
 }
 
 func (s *server) Close(ctx context.Context) error {
-	log.Info(ctx, "trigger worker server stop...", nil)
+	log.Info(ctx).Msg("trigger worker server stop...")
 	s.stop(ctx, true)
-	log.Info(ctx, "trigger worker server stopped", nil)
+	log.Info(ctx).Msg("trigger worker server stopped")
 	return nil
 }
 
@@ -177,19 +175,16 @@ func (s *server) stop(ctx context.Context, sendUnregister bool) {
 	}
 	err := s.worker.Stop(ctx)
 	if err != nil {
-		log.Error(ctx, "trigger worker stop error", map[string]interface{}{
-			log.KeyError: err,
-		})
+		log.Error(ctx).Err(err).Msg("trigger worker stop error")
 	}
 	if sendUnregister {
 		err = s.worker.Unregister(ctx)
 		if err != nil {
-			log.Error(ctx, "unregister trigger worker error", map[string]interface{}{
-				"addr":       s.config.ControllerAddr,
-				log.KeyError: err,
-			})
+			log.Error(ctx).Err(err).
+				Strs("address", s.config.ControllerAddr).
+				Msg("unregister trigger worker error")
 		} else {
-			log.Info(ctx, "unregister trigger worker success", nil)
+			log.Info(ctx).Msg("unregister trigger worker success")
 		}
 	}
 	s.state = primitive.ServerStateStopped

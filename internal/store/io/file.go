@@ -22,7 +22,7 @@ import (
 	"github.com/ncw/directio"
 
 	// first-party libraries.
-	"github.com/linkall-labs/vanus/pkg/errors"
+	"github.com/vanus-labs/vanus/pkg/errors"
 )
 
 const (
@@ -144,9 +144,5 @@ func warmFile(f *os.File, size int64) error { //nolint:unused,nolintlint // use 
 		}
 	}
 
-	if err := f.Sync(); err != nil {
-		return err
-	}
-
-	return nil
+	return f.Sync()
 }

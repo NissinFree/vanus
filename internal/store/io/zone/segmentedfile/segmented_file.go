@@ -15,18 +15,18 @@
 package segmentedfile
 
 import (
-	// standard libraries.
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"sync"
 
+	// first-party libraries.
+	"github.com/vanus-labs/vanus/observability/log"
+
 	// this project.
-	"github.com/linkall-labs/vanus/internal/store/io"
-	"github.com/linkall-labs/vanus/internal/store/io/zone"
-	"github.com/linkall-labs/vanus/observability/log"
+	"github.com/vanus-labs/vanus/internal/store/io"
+	"github.com/vanus-labs/vanus/internal/store/io/zone"
 )
 
 type SegmentedFile struct {
@@ -61,10 +61,9 @@ func Open(dir string, opts ...Option) (*SegmentedFile, error) {
 func (sf *SegmentedFile) Close() {
 	for _, s := range sf.segments {
 		if err := s.Close(); err != nil {
-			log.Error(context.Background(), "Close segment failed.", map[string]interface{}{
-				"path":       s.path,
-				log.KeyError: err,
-			})
+			log.Error().Err(err).
+				Str("path", s.path).
+				Msg("Close segment failed.")
 		}
 	}
 }

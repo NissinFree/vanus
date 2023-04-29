@@ -15,19 +15,23 @@
 package transport
 
 import (
+	// standard libraries.
 	"context"
 	"testing"
 	"time"
 
-	"github.com/linkall-labs/vanus/raft/raftpb"
+	// third-party libraries.
 	. "github.com/smartystreets/goconvey/convey"
+
+	// first-party libraries.
+	"github.com/vanus-labs/vanus/raft/raftpb"
 )
 
 type dmu struct {
 	recvch chan *raftpb.Message
 }
 
-func (d *dmu) Receive(ctx context.Context, msg *raftpb.Message, endpoint string) error {
+func (d *dmu) Receive(_ context.Context, msg *raftpb.Message, _ string) error {
 	d.recvch <- msg
 	return nil
 }

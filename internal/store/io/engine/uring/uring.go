@@ -18,17 +18,16 @@
 package uring
 
 import (
-	// standard libraries.
-	"context"
-
 	// third-party libraries.
 	"github.com/iceber/iouring-go"
 
+	// first-party libraries.
+	"github.com/vanus-labs/vanus/observability/log"
+
 	// this project.
-	"github.com/linkall-labs/vanus/internal/store/io"
-	"github.com/linkall-labs/vanus/internal/store/io/engine"
-	"github.com/linkall-labs/vanus/internal/store/io/zone"
-	"github.com/linkall-labs/vanus/observability/log"
+	"github.com/vanus-labs/vanus/internal/store/io"
+	"github.com/vanus-labs/vanus/internal/store/io/engine"
+	"github.com/vanus-labs/vanus/internal/store/io/zone"
 )
 
 const (
@@ -46,9 +45,7 @@ var _ engine.Interface = (*uRing)(nil)
 func New() engine.Interface {
 	ring, err := iouring.New(defaultResultBufferSize)
 	if err != nil {
-		log.Error(context.Background(), "Create iouring failed.", map[string]interface{}{
-			log.KeyError: err,
-		})
+		log.Error().Err(err).Msg("Create iouring failed")
 		panic(err)
 	}
 
@@ -64,9 +61,7 @@ func New() engine.Interface {
 
 func (e *uRing) Close() {
 	if err := e.ring.Close(); err != nil {
-		log.Error(context.Background(), "Encounter error when close iouring.", map[string]interface{}{
-			log.KeyError: err,
-		})
+		log.Error().Err(err).Msg("Encounter error when close iouring")
 	}
 	close(e.resultC)
 }
@@ -77,7 +72,7 @@ func (e *uRing) runCallback() {
 	}
 }
 
-func (e *uRing) WriteAt(z zone.Interface, b []byte, off int64, so, eo int, cb io.WriteCallback) {
+func (e *uRing) WriteAt(z zone.Interface, b []byte, off int64, so, eo int, cb io.WriteCallback) { //nolint:revive // ok
 	f, offset := z.Raw(off)
 	pr := iouring.Pwrite(int(f.Fd()), b, uint64(offset)).
 		WithCallback(func(result iouring.Result) error {

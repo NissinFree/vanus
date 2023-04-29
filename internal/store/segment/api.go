@@ -22,11 +22,11 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	// first-party libraries.
-	cepb "github.com/linkall-labs/vanus/proto/pkg/cloudevents"
-	segpb "github.com/linkall-labs/vanus/proto/pkg/segment"
+	cepb "github.com/vanus-labs/vanus/proto/pkg/cloudevents"
+	segpb "github.com/vanus-labs/vanus/proto/pkg/segment"
 
 	// this project.
-	"github.com/linkall-labs/vanus/internal/primitive/vanus"
+	"github.com/vanus-labs/vanus/internal/primitive/vanus"
 )
 
 type segmentServer struct {
@@ -37,7 +37,7 @@ type segmentServer struct {
 var _ segpb.SegmentServerServer = (*segmentServer)(nil)
 
 func (s *segmentServer) Start(
-	ctx context.Context, req *segpb.StartSegmentServerRequest,
+	ctx context.Context, _ *segpb.StartSegmentServerRequest,
 ) (*segpb.StartSegmentServerResponse, error) {
 	if err := s.srv.Start(ctx); err != nil {
 		return nil, err
@@ -47,7 +47,7 @@ func (s *segmentServer) Start(
 }
 
 func (s *segmentServer) Stop(
-	ctx context.Context, req *segpb.StopSegmentServerRequest,
+	ctx context.Context, _ *segpb.StopSegmentServerRequest,
 ) (*segpb.StopSegmentServerResponse, error) {
 	if err := s.srv.Stop(ctx); err != nil {
 		return nil, err
@@ -56,7 +56,7 @@ func (s *segmentServer) Stop(
 	return &segpb.StopSegmentServerResponse{}, nil
 }
 
-func (s *segmentServer) Status(ctx context.Context, req *emptypb.Empty) (*segpb.StatusResponse, error) {
+func (s *segmentServer) Status(_ context.Context, _ *emptypb.Empty) (*segpb.StatusResponse, error) {
 	return &segpb.StatusResponse{Status: string(s.srv.Status())}, nil
 }
 
@@ -79,7 +79,7 @@ func (s *segmentServer) RemoveBlock(ctx context.Context, req *segpb.RemoveBlockR
 }
 
 func (s *segmentServer) GetBlockInfo(
-	ctx context.Context, req *segpb.GetBlockInfoRequest,
+	_ context.Context, _ *segpb.GetBlockInfoRequest,
 ) (*segpb.GetBlockInfoResponse, error) {
 	// TODO(james.yin): implements GetBlockInfo()
 	// if err := s.srv.GetBlockInfo(ctx, 0); err != nil {
@@ -92,7 +92,7 @@ func (s *segmentServer) GetBlockInfo(
 func (s *segmentServer) ActivateSegment(
 	ctx context.Context, req *segpb.ActivateSegmentRequest,
 ) (*segpb.ActivateSegmentResponse, error) {
-	logID := vanus.NewIDFromUint64(req.EventLogId)
+	logID := vanus.NewIDFromUint64(req.EventlogId)
 	segID := vanus.NewIDFromUint64(req.ReplicaGroupId)
 	replicas := make(map[vanus.ID]string, len(req.Replicas))
 	for id, endpoint := range req.Replicas {
@@ -108,7 +108,7 @@ func (s *segmentServer) ActivateSegment(
 }
 
 func (s *segmentServer) InactivateSegment(
-	ctx context.Context, req *segpb.InactivateSegmentRequest,
+	_ context.Context, _ *segpb.InactivateSegmentRequest,
 ) (*emptypb.Empty, error) {
 	return &emptypb.Empty{}, nil
 }

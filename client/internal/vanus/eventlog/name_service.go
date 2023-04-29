@@ -25,15 +25,15 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	// first-party libraries.
-	"github.com/linkall-labs/vanus/observability/log"
-	"github.com/linkall-labs/vanus/observability/tracing"
-	"github.com/linkall-labs/vanus/pkg/cluster"
-	"github.com/linkall-labs/vanus/pkg/errors"
-	ctrlpb "github.com/linkall-labs/vanus/proto/pkg/controller"
-	metapb "github.com/linkall-labs/vanus/proto/pkg/meta"
+	"github.com/vanus-labs/vanus/observability/log"
+	"github.com/vanus-labs/vanus/observability/tracing"
+	"github.com/vanus-labs/vanus/pkg/cluster"
+	"github.com/vanus-labs/vanus/pkg/errors"
+	ctrlpb "github.com/vanus-labs/vanus/proto/pkg/controller"
+	metapb "github.com/vanus-labs/vanus/proto/pkg/meta"
 
 	// this project.
-	"github.com/linkall-labs/vanus/client/pkg/record"
+	"github.com/vanus-labs/vanus/client/pkg/record"
 )
 
 func NewNameService(endpoints []string) *NameService {
@@ -44,7 +44,7 @@ func NewNameService(endpoints []string) *NameService {
 }
 
 type NameService struct {
-	client ctrlpb.EventLogControllerClient
+	client ctrlpb.EventlogControllerClient
 	tracer *tracing.Tracer
 }
 
@@ -53,17 +53,16 @@ func (ns *NameService) LookupWritableSegment(ctx context.Context, logID uint64) 
 	defer span.End()
 
 	req := &ctrlpb.GetAppendableSegmentRequest{
-		EventLogId: logID,
+		EventlogId: logID,
 		Limited:    1,
 	}
 
 	resp, err := ns.client.GetAppendableSegment(ctx, req)
 	if err != nil {
-		log.Error(context.Background(), "get appendable segment failed", map[string]interface{}{
-			log.KeyError: err,
-			"eventlog":   logID,
-			"resp":       resp.String(),
-		})
+		log.Error().Err(err).
+			Stringer("response", resp).
+			Uint64("eventlog", logID).
+			Msg("get appendable segment failed")
 		return nil, err
 	}
 
@@ -79,7 +78,7 @@ func (ns *NameService) LookupReadableSegments(ctx context.Context, logID uint64)
 	defer span.End()
 
 	req := &ctrlpb.ListSegmentRequest{
-		EventLogId:  logID,
+		EventlogId:  logID,
 		StartOffset: 0,
 		EndOffset:   math.MaxInt64,
 		Limited:     math.MaxInt32,
@@ -87,11 +86,10 @@ func (ns *NameService) LookupReadableSegments(ctx context.Context, logID uint64)
 
 	resp, err := ns.client.ListSegment(ctx, req)
 	if err != nil {
-		log.Error(context.Background(), "list segment failed", map[string]interface{}{
-			log.KeyError: err,
-			"eventlog":   logID,
-			"resp":       resp.String(),
-		})
+		log.Error().Err(err).
+			Uint64("eventlog", logID).
+			Stringer("response", resp).
+			Msg("list segment failed")
 		return nil, err
 	}
 
@@ -128,7 +126,7 @@ func toSegment(segment *metapb.Segment) *record.Segment {
 		StartOffset:      segment.GetStartOffsetInLog(),
 		EndOffset:        segment.GetEndOffsetInLog(),
 		FirstEventBornAt: time.UnixMilli(segment.FirstEventBornAtByUnixMs),
-		LastEventBornAt:  time.UnixMilli(segment.LastEvnetBornAtByUnixMs),
+		LastEventBornAt:  time.UnixMilli(segment.LastEventBornAtByUnixMs),
 		Writable:         segment.State == "working", // TODO: writable
 		Blocks:           blocks,
 		LeaderBlockID:    segment.GetLeaderBlockId(),

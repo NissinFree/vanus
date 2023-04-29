@@ -16,12 +16,12 @@ package store
 
 import (
 	// first-party libraries.
-	"github.com/linkall-labs/vanus/observability"
-	"github.com/linkall-labs/vanus/pkg/util"
+	"github.com/vanus-labs/vanus/observability"
+	"github.com/vanus-labs/vanus/pkg/util"
 
 	// this project.
-	"github.com/linkall-labs/vanus/internal/primitive"
-	"github.com/linkall-labs/vanus/internal/store/config"
+	"github.com/vanus-labs/vanus/internal/primitive"
+	"github.com/vanus-labs/vanus/internal/store/config"
 )
 
 type Config struct {
@@ -46,10 +46,7 @@ func (c *Config) Validate() error {
 	if err := c.Raft.Validate(); err != nil {
 		return err
 	}
-	if err := c.VSB.Validate(); err != nil {
-		return err
-	}
-	return nil
+	return c.VSB.Validate()
 }
 
 type VolumeInfo struct {

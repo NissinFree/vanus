@@ -17,15 +17,17 @@ package errinterceptor
 import (
 	"context"
 
-	"github.com/linkall-labs/vanus/pkg/errors"
 	"google.golang.org/grpc"
+
+	"github.com/vanus-labs/vanus/pkg/errors"
 )
 
 // type GRPCErrorTranslatorFunc func(*errors.Error) error
 
 func StreamServerInterceptor() grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo,
-		handler grpc.StreamHandler) error {
+		handler grpc.StreamHandler,
+	) error {
 		err := handler(srv, stream)
 		return errors.ConvertToGRPCError(err)
 	}
@@ -33,8 +35,27 @@ func StreamServerInterceptor() grpc.StreamServerInterceptor {
 
 func UnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo,
-		handler grpc.UnaryHandler) (interface{}, error) {
+		handler grpc.UnaryHandler,
+	) (interface{}, error) {
 		res, err := handler(ctx, req)
 		return res, errors.ConvertToGRPCError(err)
+	}
+}
+
+func UnaryClientInterceptor() grpc.UnaryClientInterceptor {
+	return func(
+		ctx context.Context,
+		method string,
+		req interface{},
+		reply interface{},
+		cc *grpc.ClientConn,
+		invoker grpc.UnaryInvoker,
+		opts ...grpc.CallOption,
+	) error {
+		err := invoker(ctx, method, req, reply, cc, opts...)
+		if et, ok := errors.FromError(err); ok {
+			return et
+		}
+		return err
 	}
 }

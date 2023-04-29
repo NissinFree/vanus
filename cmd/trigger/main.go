@@ -15,42 +15,37 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"net"
 	"os"
 	"sync"
 
-	"github.com/linkall-labs/vanus/internal/primitive"
-	"github.com/linkall-labs/vanus/internal/trigger"
-	"github.com/linkall-labs/vanus/observability"
-	"github.com/linkall-labs/vanus/observability/log"
-	"github.com/linkall-labs/vanus/observability/metrics"
-	"github.com/linkall-labs/vanus/pkg/util/signal"
-	pbtrigger "github.com/linkall-labs/vanus/proto/pkg/trigger"
 	"google.golang.org/grpc"
+
+	"github.com/vanus-labs/vanus/observability"
+	"github.com/vanus-labs/vanus/observability/log"
+	"github.com/vanus-labs/vanus/observability/metrics"
+	"github.com/vanus-labs/vanus/pkg/util/signal"
+	pbtrigger "github.com/vanus-labs/vanus/proto/pkg/trigger"
+
+	"github.com/vanus-labs/vanus/internal/primitive"
+	"github.com/vanus-labs/vanus/internal/trigger"
 )
 
-var (
-	configPath = flag.String("config", "./config/trigger.yaml", "trigger worker config file path")
-)
+var configPath = flag.String("config", "./config/trigger.yaml", "trigger worker config file path")
 
 func main() {
 	flag.Parse()
 
 	cfg, err := trigger.InitConfig(*configPath)
 	if err != nil {
-		log.Error(context.Background(), "init config error", map[string]interface{}{
-			log.KeyError: err,
-		})
+		log.Error().Err(err).Msg("init config error")
 		os.Exit(-1)
 	}
 	listen, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Port))
 	if err != nil {
-		log.Error(context.Background(), "failed to listen", map[string]interface{}{
-			log.KeyError: err,
-		})
+		log.Error().Msg("failed to listen")
 		os.Exit(-1)
 	}
 	ctx := signal.SetupSignalContext()
@@ -63,25 +58,21 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		log.Info(ctx, "the grpc server ready to work", nil)
+		log.Info(ctx).Msg("the grpc server ready to work")
 		err = grpcServer.Serve(listen)
 		if err != nil {
-			log.Error(ctx, "grpc server occurred an error", map[string]interface{}{
-				log.KeyError: err,
-			})
+			log.Error(ctx).Err(err).Msg("grpc server occurred an error")
 		}
 	}()
 	init := srv.(primitive.Initializer)
 	if err = init.Initialize(ctx); err != nil {
-		log.Error(ctx, "the trigger worker has initialized failed", map[string]interface{}{
-			log.KeyError: err,
-		})
+		log.Error(ctx).Err(err).Msg("the trigger worker has initialized failed")
 		os.Exit(1)
 	}
 	<-ctx.Done()
 	closer := srv.(primitive.Closer)
-	closer.Close(ctx)
+	_ = closer.Close(ctx)
 	grpcServer.GracefulStop()
 	wg.Wait()
-	log.Info(ctx, "trigger worker stopped", nil)
+	log.Info(ctx).Msg("trigger worker stopped")
 }

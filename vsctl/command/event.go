@@ -32,10 +32,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/jedib0t/go-pretty/v6/text"
-	"github.com/linkall-labs/vanus/internal/primitive/vanus"
-	proxypb "github.com/linkall-labs/vanus/proto/pkg/proxy"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/types/known/wrapperspb"
+
+	proxypb "github.com/vanus-labs/vanus/proto/pkg/proxy"
+
+	"github.com/vanus-labs/vanus/internal/primitive/vanus"
 )
 
 const (
@@ -79,12 +81,17 @@ func putEventCommand() *cobra.Command {
 			if err != nil {
 				cmdFailedf(cmd, "create ce client error: %s\n", err)
 			}
+			if namespace == "" {
+				namespace = "default"
+				color.Green("the namespace not specified, using [default] namespace")
+			}
 			var target string
 			endpoint := mustGetGatewayCloudEventsEndpoint(cmd)
+			path := fmt.Sprintf("namespaces/%s/eventbus/%s/events", namespace, args[0])
 			if strings.HasPrefix(endpoint, httpPrefix) {
-				target = fmt.Sprintf("%s/gateway/%s", endpoint, args[0])
+				target = fmt.Sprintf("%s/%s", endpoint, path)
 			} else {
-				target = fmt.Sprintf("%s%s/gateway/%s", httpPrefix, endpoint, args[0])
+				target = fmt.Sprintf("%s%s/%s", httpPrefix, endpoint, path)
 			}
 
 			ctx := v2.ContextWithTarget(context.Background(), target)
@@ -96,8 +103,10 @@ func putEventCommand() *cobra.Command {
 			}
 		},
 	}
+	cmd.Flags().StringVar(&namespace, "namespace", "", "namespace name, default name is default")
 	cmd.Flags().StringVar(&id, "id", "", "event id of CloudEvent")
-	cmd.Flags().StringVar(&dataFormat, "data-format", "json", "the format of event body, JSON or plain")
+	cmd.Flags().StringVar(&dataFormat, "data-format", "json",
+		"the format of event body, JSON or plain")
 	cmd.Flags().StringVar(&eventSource, "source", "cmd", "event source of CloudEvent")
 	cmd.Flags().StringVar(&eventDeliveryTime, "delivery-time", "",
 		"event delivery time of CloudEvent, only support the time layout of RFC3339, for example: 2022-01-01T08:00:00Z")
@@ -182,10 +191,16 @@ func sendOne(ctx context.Context, cmd *cobra.Command, ceClient v2.Client) {
 				if detail {
 					t.AppendHeader(table.Row{"Result", "RESPONSE EVENT"})
 					t.AppendRow(table.Row{httpResult.StatusCode, resEvent})
-					tbcfg = append(tbcfg, table.ColumnConfig{Number: 2, Align: text.AlignCenter, AlignHeader: text.AlignCenter})
+					tbcfg = append(tbcfg, table.ColumnConfig{
+						Number: 2,
+						Align:  text.AlignCenter, AlignHeader: text.AlignCenter,
+					})
 				} else {
 					t.AppendHeader(table.Row{"Result", "Error"})
-					t.AppendRow(table.Row{httpResult.StatusCode, fmt.Errorf(httpResult.Format, httpResult.Args...)})
+					t.AppendRow(table.Row{
+						httpResult.StatusCode,
+						fmt.Errorf(httpResult.Format, httpResult.Args...),
+					})
 				}
 				t.SetColumnConfigs(tbcfg)
 				t.SetOutputMirror(os.Stdout)
@@ -288,7 +303,7 @@ func sendFile(ctx context.Context, cmd *cobra.Command, ceClient v2.Client) {
 
 func getEventCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "get <eventbus-name or event-id> ",
+		Use:   "get <eventbus-name> ",
 		Short: "get a event from specified eventbus",
 		Run: func(cmd *cobra.Command, args []string) {
 			if len(args) == 0 && eventID == "" {
@@ -296,15 +311,14 @@ func getEventCommand() *cobra.Command {
 			}
 
 			res, err := client.GetEvent(context.Background(), &proxypb.GetEventRequest{
-				Eventbus:   args[0],
+				EventbusId: mustGetEventbusID(namespace, args[0]).Uint64(),
 				EventlogId: eventlogID,
 				Offset:     offset,
 				EventId:    eventID,
 				Number:     int32(number),
 			})
-
 			if err != nil {
-				cmdFailedf(cmd, "failed to get event: %s", err)
+				cmdFailedf(cmd, "failed to get event: %s", Error(err))
 			}
 
 			if IsFormatJSON(cmd) {
@@ -333,6 +347,7 @@ func getEventCommand() *cobra.Command {
 		},
 	}
 
+	cmd.Flags().StringVar(&namespace, "namespace", "", "namespace name, default name is default")
 	cmd.Flags().Int64Var(&offset, "offset", 0, "which position you want to start get")
 	cmd.Flags().Int16Var(&number, "number", 1, "the number of event you want to get")
 	cmd.Flags().Uint64Var(&eventlogID, "eventlog", 0, "get events from a specified eventlog")
@@ -360,13 +375,14 @@ func queryEventCommand() *cobra.Command {
 					"RFC3339, like 2022-11-24T11:20:56+08:00."))
 			}
 			ctx := context.Background()
+			eventbusID := mustGetEventbusID(namespace, args[0]).Uint64()
 			res, err := client.LookupOffset(ctx, &proxypb.LookupOffsetRequest{
-				Eventbus:   args[0],
+				EventbusId: eventbusID,
 				EventlogId: eventlogID,
 				Timestamp:  t.UnixMilli(),
 			})
 			if err != nil {
-				cmdFailedf(cmd, fmt.Sprintf("failed to query: %s.", err.Error()))
+				cmdFailedf(cmd, fmt.Sprintf("failed to query: %s.", Error(err)))
 			}
 
 			result := make([]*QueryOutput, 0)
@@ -378,13 +394,13 @@ func queryEventCommand() *cobra.Command {
 				}
 				if v >= 0 {
 					res, err := client.GetEvent(ctx, &proxypb.GetEventRequest{
-						Eventbus:   args[0],
+						EventbusId: eventbusID,
 						EventlogId: k,
 						Offset:     v,
 						Number:     1,
 					})
 					if err != nil {
-						cmdFailedf(cmd, "failed to get event: %s", err)
+						cmdFailedf(cmd, "failed to get event: %s", Error(err))
 					}
 					if len(res.Events) >= 1 {
 						qo.Event = format(res.Events[0])
@@ -416,6 +432,7 @@ func queryEventCommand() *cobra.Command {
 			}
 		},
 	}
+	cmd.Flags().StringVar(&namespace, "namespace", "", "namespace name, default name is default")
 	cmd.Flags().StringVar(&eventCreateTime, "time", "-",
 		"fuzzily query event by created time with RFC3339 format, like 2022-11-24T11:20:56+08:00.\n"+
 			"the first event its created time >= the specified time will be returned.\n"+

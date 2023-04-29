@@ -16,8 +16,8 @@ package block
 
 import (
 	// this project.
-	"github.com/linkall-labs/vanus/internal/store/meta"
-	walog "github.com/linkall-labs/vanus/internal/store/wal"
+	"github.com/vanus-labs/vanus/internal/store/meta"
+	walog "github.com/vanus-labs/vanus/internal/store/wal"
 )
 
 const (
@@ -70,10 +70,10 @@ func makeConfig(opts ...Option) config {
 	for _, opt := range opts {
 		opt(&cfg)
 	}
-	if cfg.stateStore == nil { //nolint:staticcheck // todo
+	if cfg.stateStore == nil { //nolint:staticcheck,revive // todo
 		// TODO(james.yin)
 	}
-	if cfg.hintStore == nil { //nolint:staticcheck // todo
+	if cfg.hintStore == nil { //nolint:staticcheck,revive // todo
 		// TODO(james.yin)
 	}
 	return cfg

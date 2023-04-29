@@ -19,8 +19,9 @@ import (
 	"os"
 
 	"github.com/fatih/color"
-	"github.com/linkall-labs/vanus/vsctl/command"
 	"github.com/spf13/cobra"
+
+	"github.com/vanus-labs/vanus/vsctl/command"
 )
 
 const (
@@ -50,6 +51,12 @@ func init() {
 		"is debug mode enable")
 	rootCmd.PersistentFlags().StringVar(&globalFlags.Format, "format", "table",
 		"the output format of vsctl, json or table")
+	rootCmd.PersistentFlags().StringVar(&globalFlags.Token, "token", "admin",
+		"the user token")
+
+	if os.Getenv("VANUS_TOKEN") != "" {
+		globalFlags.Token = os.Getenv("VANUS_TOKEN")
+	}
 
 	if os.Getenv("VANUS_GATEWAY") != "" {
 		globalFlags.Endpoint = os.Getenv("VANUS_GATEWAY")
@@ -65,6 +72,9 @@ func init() {
 		command.NewSubscriptionCommand(),
 		command.NewClusterCommand(),
 		command.NewConnectorCommand(),
+		command.NewNamespaceCommand(),
+		command.NewUserCommand(),
+		command.NewPermissionCommand(),
 		newVersionCommand(),
 	)
 	rootCmd.CompletionOptions.DisableDefaultCmd = true

@@ -19,8 +19,8 @@ import (
 	"encoding/binary"
 
 	// this project.
-	"github.com/linkall-labs/vanus/internal/store/block"
-	ceschema "github.com/linkall-labs/vanus/internal/store/schema/ce"
+	"github.com/vanus-labs/vanus/internal/store/block"
+	ceschema "github.com/vanus-labs/vanus/internal/store/schema/ce"
 )
 
 const (
@@ -34,7 +34,7 @@ type endEntryEncoder struct{}
 // Make sure endEntryEncoder implements RecordDataEncoder.
 var _ RecordDataEncoder = (*endEntryEncoder)(nil)
 
-func (e *endEntryEncoder) Size(entry block.Entry) int {
+func (e *endEntryEncoder) Size(_ block.Entry) int {
 	return endEntrySize
 }
 

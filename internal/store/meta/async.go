@@ -23,7 +23,7 @@ import (
 	"github.com/huandu/skiplist"
 
 	// this project.
-	walog "github.com/linkall-labs/vanus/internal/store/wal"
+	walog "github.com/vanus-labs/vanus/internal/store/wal"
 )
 
 const (
@@ -84,11 +84,11 @@ func (s *AsyncStore) Load(key []byte) (interface{}, bool) {
 	return s.load(key)
 }
 
-func (s *AsyncStore) Store(ctx context.Context, key []byte, value interface{}) {
+func (s *AsyncStore) Store(_ context.Context, key []byte, value interface{}) {
 	_ = s.set(KVRange(key, value))
 }
 
-func (s *AsyncStore) BatchStore(ctx context.Context, kvs Ranger) {
+func (s *AsyncStore) BatchStore(_ context.Context, kvs Ranger) {
 	_ = s.set(kvs)
 }
 

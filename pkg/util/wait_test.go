@@ -16,11 +16,11 @@ package util
 
 import (
 	"context"
+	"github.com/vanus-labs/vanus/observability/log"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/linkall-labs/vanus/observability/log"
 	. "github.com/smartystreets/goconvey/convey"
 )
 
@@ -70,7 +70,7 @@ func TestUntilWithContext(t *testing.T) {
 		count := int64(0)
 		interval := 20 * time.Millisecond
 		go UntilWithContext(ctx, func(ctx context.Context) {
-			log.Info(ctx, "entrance", nil)
+			log.Info().Msg("entrance")
 			atomic.AddInt64(&count, 1)
 		}, interval)
 		time.Sleep(10 * interval)

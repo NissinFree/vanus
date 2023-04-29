@@ -22,15 +22,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/linkall-labs/vanus/observability/log"
-	"github.com/linkall-labs/vanus/pkg/errors"
-	ctrlpb "github.com/linkall-labs/vanus/proto/pkg/controller"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
+
+	"github.com/vanus-labs/vanus/internal/primitive/interceptor/errinterceptor"
+	"github.com/vanus-labs/vanus/observability/log"
+	"github.com/vanus-labs/vanus/pkg/errors"
+	ctrlpb "github.com/vanus-labs/vanus/proto/pkg/controller"
 )
 
 const (
@@ -50,9 +52,7 @@ type Conn struct {
 func NewConnection(endpoints []string, credentials credentials.TransportCredentials) *Conn {
 	// TODO temporary implement
 	v, _ := strconv.ParseBool(os.Getenv(vanusConnBypass))
-	log.Info(context.Background(), "init Conn", map[string]interface{}{
-		"endpoints": endpoints,
-	})
+	log.Info().Strs("endpoints", endpoints).Msg("init Conn")
 	return &Conn{
 		endpoints:   endpoints,
 		grpcConn:    map[string]*grpc.ClientConn{},
@@ -62,33 +62,32 @@ func NewConnection(endpoints []string, credentials credentials.TransportCredenti
 }
 
 func (c *Conn) invoke(ctx context.Context, method string, args, reply interface{}, opts ...grpc.CallOption) error {
-	log.Debug(ctx, "grpc invoke", map[string]interface{}{
-		"method": method,
-		"args":   fmt.Sprintf("%v", args),
-	})
-	conn := c.makeSureClient(ctx, false)
-	if conn == nil {
-		log.Warning(ctx, "not get client for controller", map[string]interface{}{})
-		return errors.ErrNoControllerLeader
+	log.Debug(ctx).Str("method", method).
+		Str("args", fmt.Sprintf("%v", args)).
+		Msg("grpc invoke")
+	conn, err := c.makeSureClient(ctx, false)
+	if conn == nil || err != nil {
+		log.Warn(ctx).Err(err).Msg("not get client for controller")
+		return err
 	}
-	err := conn.Invoke(ctx, method, args, reply, opts...)
-	if err != nil {
-		log.Warning(ctx, "invoke error, try to retry", map[string]interface{}{
-			log.KeyError: err,
-		})
-	}
-	if isNeedRetry(err) {
-		conn = c.makeSureClient(ctx, true)
-		if conn == nil {
-			log.Warning(ctx, "not get client when try to renew client", map[string]interface{}{})
-			return errors.ErrNoControllerLeader
-		}
+
+	for idx := 1; idx <= 3; idx++ {
 		err = conn.Invoke(ctx, method, args, reply, opts...)
-	}
-	if err != nil {
-		log.Warning(ctx, "invoke error", map[string]interface{}{
-			log.KeyError: err,
-		})
+		if err != nil {
+			log.Debug(ctx).Err(err).Msg("invoke error, try to retry")
+		}
+		if errors.Is(err, errors.ErrNotReady) {
+			time.Sleep(time.Duration(3*idx) * time.Second)
+			continue
+		} else if isNeedRetry(err) {
+			conn, err = c.makeSureClient(ctx, true)
+			if conn == nil {
+				log.Warn(ctx).Err(err).Msg("not get client when try to renew client")
+				return err
+			}
+		} else {
+			return err
+		}
 	}
 	return err
 }
@@ -97,29 +96,27 @@ func (c *Conn) close() error {
 	var err error
 	for ip, conn := range c.grpcConn {
 		if _err := conn.Close(); _err != nil {
-			log.Info(context.Background(), "close grpc connection failed", map[string]interface{}{
-				log.KeyError:   _err,
-				"peer_address": ip,
-			})
+			log.Info().Err(_err).
+				Str("peer_address", ip).
+				Msg("close grpc connection failed")
 			err = errors.Chain(err, _err)
 		}
 	}
 	return err
 }
 
-func (c *Conn) makeSureClient(ctx context.Context, renew bool) *grpc.ClientConn {
+func (c *Conn) makeSureClient(ctx context.Context, renew bool) (*grpc.ClientConn, error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
 	if c.leaderClient == nil || renew {
 		if c.bypass {
 			c.leaderClient = c.getGRPCConn(ctx, c.endpoints[0])
-			return c.leaderClient
+			return c.leaderClient, nil
 		}
-		log.Info(ctx, "try to create connection", map[string]interface{}{
-			"renew":     renew,
-			"endpoints": c.endpoints,
-		})
+		log.Debug(ctx).
+			Bool("renew", renew).
+			Strs("endpoints", c.endpoints).Msg("try to create connection")
 		for _, v := range c.endpoints {
 			conn := c.getGRPCConn(ctx, v)
 			if conn == nil {
@@ -128,31 +125,26 @@ func (c *Conn) makeSureClient(ctx context.Context, renew bool) *grpc.ClientConn 
 			pingClient := ctrlpb.NewPingServerClient(conn)
 			res, err := pingClient.Ping(context.Background(), &emptypb.Empty{})
 			if err != nil {
-				log.Info(ctx, "failed to ping controller", map[string]interface{}{
-					"address":    v,
-					log.KeyError: err,
-				})
-				return nil
+				log.Info(ctx).Str("address", v).Err(err).Msg("failed to ping controller")
+				return nil, errors.ErrNoControllerLeader
 			}
 			c.leader = res.LeaderAddr
 			if v == res.LeaderAddr {
 				c.leaderClient = conn
-				return conn
+				return conn, nil
 			}
 			break
 		}
 
 		conn := c.getGRPCConn(ctx, c.leader)
 		if conn == nil {
-			log.Info(ctx, "failed to get Conn", map[string]interface{}{})
-			return nil
+			log.Info(ctx).Msg("failed to get Conn")
+			return nil, errors.ErrNoControllerLeader
 		}
-		log.Info(ctx, "success to get connection", map[string]interface{}{
-			"leader": c.leader,
-		})
+		log.Info(ctx).Str("leader", c.leader).Msg("success to get connection")
 		c.leaderClient = conn
 	}
-	return c.leaderClient
+	return c.leaderClient, nil
 }
 
 func (c *Conn) getGRPCConn(ctx context.Context, addr string) *grpc.ClientConn {
@@ -167,17 +159,16 @@ func (c *Conn) getGRPCConn(ctx context.Context, addr string) *grpc.ClientConn {
 		_ = conn.Close() // make sure it's closed
 	}
 
-	var opts []grpc.DialOption
-	opts = append(opts, grpc.WithTransportCredentials(c.credentials))
-	opts = append(opts, grpc.WithBlock())
+	opts := []grpc.DialOption{
+		grpc.WithBlock(),
+		grpc.WithTransportCredentials(c.credentials),
+		grpc.WithUnaryInterceptor(errinterceptor.UnaryClientInterceptor()),
+	}
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 	conn, err = grpc.DialContext(ctx, addr, opts...)
 	if err != nil {
-		log.Error(ctx, "failed to dial to controller", map[string]interface{}{
-			"address":    addr,
-			log.KeyError: err,
-		})
+		log.Error().Str("address", addr).Err(err).Msg("failed to dial to controller")
 		return nil
 	}
 	c.grpcConn[addr] = conn

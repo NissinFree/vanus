@@ -62,6 +62,8 @@ const (
 	ErrorCode_UNMARSHAL              ErrorCode = 9509
 	ErrorCode_LAMBDA_INVOKE          ErrorCode = 9510
 	ErrorCode_LAMBDA_INVOKE_RESPONSE ErrorCode = 9511
+	ErrorCode_INVALID_JSON_PATH      ErrorCode = 9512
+	ErrorCode_JSON_PATH_NOT_EXIST    ErrorCode = 9513
 
 	// ErrorCode_SEGMENT_FULL 96xx
 	ErrorCode_SEGMENT_FULL            ErrorCode = 9600
@@ -80,12 +82,16 @@ const (
 	ErrorCode_NOT_LEADER           ErrorCode = 9700
 	ErrorCode_NO_CONTROLLER_LEADER ErrorCode = 9701
 	ErrorCode_NOT_RAFT_LEADER      ErrorCode = 9702
+	ErrorCodeNotReady              ErrorCode = 9704
 
 	// ErrorCode_RESERVE 98xx
 
 	// ErrorCode_OTHERS 99xx
 	ErrorCode_RESOURCE_EXHAUSTED  ErrorCode = 9901
 	ErrorCode_RESOURCE_CAN_NOT_OP ErrorCode = 9902
+
+	ErrorCode_Unauthenticated  ErrorCode = 9910
+	ErrorCode_PermissionDenied ErrorCode = 9911
 )
 
 var (
@@ -94,16 +100,17 @@ var (
 
 	// RESOURCE_NOT_FOUND
 	ErrResourceNotFound       = New("resource not found").WithGRPCCode(ErrorCode_RESOURCE_NOT_FOUND)
-	ErrEventLogNotFound       = New("eventlog not found").WithGRPCCode(ErrorCode_EVENTLOG_NOT_FOUND)
+	ErrEventlogNotFound       = New("eventlog not found").WithGRPCCode(ErrorCode_EVENTLOG_NOT_FOUND)
 	ErrSegmentNotFound        = New("segment not found").WithGRPCCode(ErrorCode_SEGMENT_NOT_FOUND)
 	ErrBlockNotFound          = New("block not found").WithGRPCCode(ErrorCode_BLOCK_NOT_FOUND)
 	ErrVolumeInstanceNotFound = New("volume instance not found").WithGRPCCode(ErrorCode_VOLUME_NOT_FOUND)
 
 	// SERVICE_NOT_RUNNING
 	ErrServerNotStart            = New("server not start").WithGRPCCode(ErrorCode_SERVICE_NOT_RUNNING)
-	ErrSegmentServerHasBeenAdded = New("the segment server has been added").WithGRPCCode(ErrorCode_SEGMENT_SERVER_HAS_BEEN_ADDED)
-	ErrServiceState              = New("service state error").WithGRPCCode(ErrorCode_SERVICE_STATE_ERROR)
-	ErrWorkerNotStart            = New("worker not start").WithGRPCCode(ErrorCode_WORKER_NOT_RUNNING)
+	ErrSegmentServerHasBeenAdded = New("the segment server has been added").WithGRPCCode(
+		ErrorCode_SEGMENT_SERVER_HAS_BEEN_ADDED)
+	ErrServiceState   = New("service state error").WithGRPCCode(ErrorCode_SERVICE_STATE_ERROR)
+	ErrWorkerNotStart = New("worker not start").WithGRPCCode(ErrorCode_WORKER_NOT_RUNNING)
 
 	// SEGMENT_FULL
 	ErrSegmentFull           = New("segment full").WithGRPCCode(ErrorCode_SEGMENT_FULL)
@@ -131,6 +138,8 @@ var (
 	ErrUnmarshall             = New("unmarshall data failed").WithGRPCCode(ErrorCode_UNMARSHAL)
 	ErrLambdaInvoke           = New("lambda invoke error").WithGRPCCode(ErrorCode_LAMBDA_INVOKE)
 	ErrLambdaInvokeResponse   = New("lambda invoke response fail").WithGRPCCode(ErrorCode_LAMBDA_INVOKE_RESPONSE)
+	ErrInvalidJSONPath        = New("invalid JSON path").WithGRPCCode(ErrorCode_INVALID_JSON_PATH)
+	ErrJSONPathNotExist       = New("JSON path not exist").WithGRPCCode(ErrorCode_JSON_PATH_NOT_EXIST)
 
 	// INVALID_REQUEST
 	ErrInvalidRequest          = New("invalid request").WithGRPCCode(ErrorCode_INVALID_REQUEST)
@@ -144,19 +153,23 @@ var (
 	ErrTransformInputParse     = New("transform input invalid").WithGRPCCode(ErrorCode_TRANSFORM_INPUT_PARSE)
 	ErrCorruptedEvent          = New("corrupted event").WithGRPCCode(ErrorCode_CORRUPTED_EVENT)
 
-	// RESOURCE_EXIST
+	// ErrResourceAlreadyExist
 	ErrResourceAlreadyExist = New("resource already exist").WithGRPCCode(ErrorCode_RESOURCE_EXIST)
 
-	// NOT_LEADER
+	// ErrNotLeader not leader
 	ErrNotLeader          = New("not leader").WithGRPCCode(ErrorCode_NOT_LEADER)
+	ErrNotReady           = New("not ready").WithGRPCCode(ErrorCodeNotReady)
 	ErrNoControllerLeader = New("no leader controller found").WithGRPCCode(ErrorCode_NO_CONTROLLER_LEADER)
 	ErrNotRaftLeader      = New("the node is not raft leader").WithGRPCCode(ErrorCode_NOT_RAFT_LEADER)
 
 	// RESOURCE_EXHAUSTED
-	ErrNoAvailableEventLog = New("no eventlog available").WithGRPCCode(ErrorCode_RESOURCE_EXHAUSTED)
+	ErrNoAvailableEventlog = New("no eventlog available").WithGRPCCode(ErrorCode_RESOURCE_EXHAUSTED)
 
 	// NO_MORE_MESSAGE
 
 	// RESOURCE_CAN_NOT_OP
 	ErrResourceCanNotOp = New("resource can not operation").WithGRPCCode(ErrorCode_RESOURCE_CAN_NOT_OP)
+
+	ErrUnauthenticated  = New("unauthenticated").WithGRPCCode(ErrorCode_Unauthenticated)
+	ErrPermissionDenied = New("permissionDenied").WithGRPCCode(ErrorCode_PermissionDenied)
 )

@@ -15,14 +15,14 @@
 package runtime
 
 import (
-	"github.com/linkall-labs/vanus/internal/primitive/transform/action/array"
-	"github.com/linkall-labs/vanus/internal/primitive/transform/action/common"
-	"github.com/linkall-labs/vanus/internal/primitive/transform/action/condition"
-	"github.com/linkall-labs/vanus/internal/primitive/transform/action/datetime"
-	"github.com/linkall-labs/vanus/internal/primitive/transform/action/math"
-	"github.com/linkall-labs/vanus/internal/primitive/transform/action/source"
-	"github.com/linkall-labs/vanus/internal/primitive/transform/action/strings"
-	"github.com/linkall-labs/vanus/internal/primitive/transform/action/structs"
+	"github.com/vanus-labs/vanus/internal/primitive/transform/action/array"
+	"github.com/vanus-labs/vanus/internal/primitive/transform/action/common"
+	"github.com/vanus-labs/vanus/internal/primitive/transform/action/condition"
+	"github.com/vanus-labs/vanus/internal/primitive/transform/action/datetime"
+	"github.com/vanus-labs/vanus/internal/primitive/transform/action/math"
+	"github.com/vanus-labs/vanus/internal/primitive/transform/action/source"
+	"github.com/vanus-labs/vanus/internal/primitive/transform/action/strings"
+	"github.com/vanus-labs/vanus/internal/primitive/transform/action/structs"
 )
 
 func init() {
@@ -53,8 +53,15 @@ func init() {
 		strings.NewReplaceBetweenPositionsAction,
 		strings.NewCapitalizeSentenceAction,
 		strings.NewCheckCustomValuesAction,
+		strings.NewSplitWithIntervalsAction,
+		strings.NewExtractBetweenDelimitersAction,
+		strings.NewExtractMissingAction,
+		strings.NewReplaceBetweenDelimitersAction,
 		strings.NewCapitalizeWordAction,
 		strings.NewSplitWithDelimiterAction,
+		strings.NewSplitBetweenPositionsAction,
+		strings.NewSplitFromStartAction,
+		strings.NewExtractBetweenPositionsAction,
 		// condition
 		condition.NewConditionIfAction,
 		// array

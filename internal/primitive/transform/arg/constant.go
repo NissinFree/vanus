@@ -17,7 +17,7 @@ package arg
 import (
 	"fmt"
 
-	"github.com/linkall-labs/vanus/internal/primitive/transform/context"
+	"github.com/vanus-labs/vanus/internal/primitive/transform/context"
 )
 
 type constant struct {
@@ -51,6 +51,6 @@ func (arg constant) SetValue(*context.EventContext, interface{}) error {
 	return ErrOperationNotSupport
 }
 
-func (arg constant) DeleteValue(ceCtx *context.EventContext) error {
+func (arg constant) DeleteValue(_ *context.EventContext) error {
 	return ErrOperationNotSupport
 }

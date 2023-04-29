@@ -30,6 +30,9 @@ import (
 	"github.com/jedib0t/go-pretty/v6/text"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
+
+	"github.com/vanus-labs/vanus/internal/primitive/vanus"
+	"github.com/vanus-labs/vanus/pkg/errors"
 )
 
 const (
@@ -121,4 +124,37 @@ func IsDNS1123Subdomain(value string) bool {
 		return false
 	}
 	return true
+}
+
+func Error(err error) string {
+	if err == nil {
+		return ""
+	}
+	if et, ok := errors.FromError(err); ok {
+		if et.Message == "" {
+			return et.Description
+		}
+		return et.Message
+	}
+	return err.Error()
+}
+
+func formatID(id uint64) string {
+	if id == 0 {
+		return ""
+	}
+	return vanus.NewIDFromUint64(id).String()
+}
+
+func getColumnConfig(header table.Row) []table.ColumnConfig {
+	var columnConfigs []table.ColumnConfig
+	for i := 0; i < len(header); i++ {
+		columnConfigs = append(columnConfigs, table.ColumnConfig{
+			Number:      i + 1,
+			VAlign:      text.VAlignMiddle,
+			Align:       text.AlignCenter,
+			AlignHeader: text.AlignCenter,
+		})
+	}
+	return columnConfigs
 }

@@ -23,8 +23,8 @@ import (
 	"time"
 
 	// this project.
-	"github.com/linkall-labs/vanus/internal/store/block"
-	ceschema "github.com/linkall-labs/vanus/internal/store/schema/ce"
+	"github.com/vanus-labs/vanus/internal/store/block"
+	ceschema "github.com/vanus-labs/vanus/internal/store/schema/ce"
 )
 
 const (
@@ -56,7 +56,7 @@ type entry struct {
 // Make sure entry implements block.Entry.
 var _ block.Entry = (*entry)(nil)
 
-func (e *entry) Get(ordinal int) interface{} {
+func (e *entry) Get(_ int) interface{} {
 	return nil
 }
 
@@ -144,7 +144,7 @@ func (e *entry) RangeExtensionAttributes(cb block.ExtensionAttributeCallback) {
 	for i := 0; i < sz; i++ {
 		attr := e.deref(attrKeyOffset(base, i))
 		val := e.deref(attrValueOffset(base, i))
-		cb.OnAttribute(attr, val)
+		cb.OnAttribute(attr, block.BytesValue(val))
 	}
 }
 
@@ -171,6 +171,10 @@ func (e *entry) extVecBase() int {
 func (e *entry) deref(base int) []byte {
 	off, sz := offsetAndLength(e.data[base:])
 	return e.data[off : off+sz]
+}
+
+func makeRef(offset, length int) uint64 {
+	return uint64(offset)<<32 | uint64(length)
 }
 
 func offsetAndLength(data []byte) (uint32, uint32) {

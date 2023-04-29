@@ -16,11 +16,10 @@ package transport
 
 import (
 	// standard libraries.
-	"context"
 	"sync"
 
-	// this project.
-	"github.com/linkall-labs/vanus/observability/log"
+	// first-party project.
+	"github.com/vanus-labs/vanus/observability/log"
 )
 
 type Resolver interface {
@@ -45,10 +44,10 @@ func (r *SimpleResolver) Resolve(node uint64) string {
 }
 
 func (r *SimpleResolver) Register(node uint64, endpoint string) {
-	log.Info(context.TODO(), "Register raft node route.", map[string]interface{}{
-		"node_id":  node,
-		"endpoint": endpoint,
-	})
+	log.Info().
+		Uint64("node_id", node).
+		Str("endpoint", endpoint).
+		Msg("Register raft node route.")
 
 	r.Lock()
 	defer r.Unlock()

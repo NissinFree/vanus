@@ -28,14 +28,15 @@ import (
 	"github.com/fatih/color"
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/jedib0t/go-pretty/v6/text"
-	"github.com/linkall-labs/vanus/internal/convert"
-	"github.com/linkall-labs/vanus/internal/primitive"
-	"github.com/linkall-labs/vanus/internal/primitive/vanus"
-	ctrlpb "github.com/linkall-labs/vanus/proto/pkg/controller"
-	"github.com/linkall-labs/vanus/proto/pkg/meta"
-	metapb "github.com/linkall-labs/vanus/proto/pkg/meta"
 	"github.com/spf13/cobra"
 	"k8s.io/utils/strings/slices"
+
+	"github.com/vanus-labs/vanus/internal/convert"
+	"github.com/vanus-labs/vanus/internal/primitive"
+	"github.com/vanus-labs/vanus/internal/primitive/vanus"
+	ctrlpb "github.com/vanus-labs/vanus/proto/pkg/controller"
+	"github.com/vanus-labs/vanus/proto/pkg/meta"
+	metapb "github.com/vanus-labs/vanus/proto/pkg/meta"
 )
 
 func NewSubscriptionCommand() *cobra.Command {
@@ -94,7 +95,8 @@ func createSubscriptionCommand() *cobra.Command {
 					Sink:           sink,
 					SinkCredential: credential,
 					Protocol:       p,
-					EventBus:       eventbus,
+					NamespaceId:    mustGetNamespaceID(namespace).Uint64(),
+					EventbusId:     mustGetEventbusID(namespace, eventbus).Uint64(),
 					Transformer:    trans,
 					Name:           subscriptionName,
 					Description:    description,
@@ -102,22 +104,27 @@ func createSubscriptionCommand() *cobra.Command {
 				},
 			})
 			if err != nil {
-				cmdFailedf(cmd, "create subscription failed: %s", err)
+				cmdFailedf(cmd, "create subscription failed: %s", Error(err))
 			}
 			printSubscription(cmd, false, false, false, res)
 		},
 	}
+	cmd.Flags().StringVar(&namespace, "namespace", "default", "namespace name, default name is default")
 	cmd.Flags().StringVar(&eventbus, "eventbus", "", "eventbus name to consuming")
 	cmd.Flags().StringVar(&sink, "sink", "", "the event you want to send to")
 	cmd.Flags().StringVar(&filters, "filters", "", "filter event you interested, JSON format required")
 	cmd.Flags().StringVar(&transformer, "transformer", "", "transformer, JSON format required")
 	cmd.Flags().Int32Var(&rateLimit, "rate-limit", 0, "max event number pushing to sink per second, default is 0, means unlimited")
 	cmd.Flags().StringVar(&from, "from", "", "consume events from, latest,earliest or RFC3339 format time")
-	cmd.Flags().StringVar(&subProtocol, "protocol", "http", "protocol,http or aws-lambda or gcloud-functions or grpc")
+	cmd.Flags().StringVar(&subProtocol, "protocol", "http",
+		"protocol,http or aws-lambda or gcloud-functions or grpc")
 	cmd.Flags().StringVar(&sinkCredentialType, "credential-type", "", "sink credential type: aws or gcloud")
-	cmd.Flags().StringVar(&sinkCredential, "credential", "", "sink credential info, JSON format or @file")
-	cmd.Flags().Int32Var(&deliveryTimeout, "delivery-timeout", 0, "event delivery to sink timeout by millisecond, default is 0, means using server-side default value: 5s")
-	cmd.Flags().Int32Var(&maxRetryAttempts, "max-retry-attempts", -1, "event delivery fail max retry attempts, default is -1, means using server-side max retry attempts: 32")
+	cmd.Flags().StringVar(&sinkCredential, "credential", "",
+		"sink credential info, JSON format or @file")
+	cmd.Flags().Int32Var(&deliveryTimeout, "delivery-timeout", 0,
+		"event delivery to sink timeout by millisecond, default is 0, means using server-side default value: 5s")
+	cmd.Flags().Int32Var(&maxRetryAttempts, "max-retry-attempts", -1,
+		"event delivery fail max retry attempts, default is -1, means using server-side max retry attempts: 32")
 	cmd.Flags().StringVar(&subscriptionName, "name", "", "subscription name")
 	cmd.Flags().StringVar(&description, "description", "", "subscription description")
 	cmd.Flags().BoolVar(&disableSubscription, "disable", false, "whether disable the "+
@@ -253,7 +260,7 @@ func getSubscriptionConfig(cmd *cobra.Command, config *meta.SubscriptionConfig) 
 			if err != nil {
 				cmdFailedf(cmd, "consumer from time format is invalid: %s", err)
 			}
-			ts := uint64(t.Unix())
+			ts := uint64(t.UnixMilli())
 			config.OffsetTimestamp = &ts
 			config.OffsetType = meta.SubscriptionConfig_TIMESTAMP
 		}
@@ -279,7 +286,7 @@ func updateSubscriptionCommand() *cobra.Command {
 		Use:   "update",
 		Short: "update a subscription",
 		Run: func(cmd *cobra.Command, args []string) {
-			id, err := vanus.NewIDFromString(subscriptionIDStr)
+			id, err := vanus.NewIDFromString(idStr)
 			if err != nil {
 				cmdFailedWithHelpNotice(cmd, fmt.Sprintf("invalid subscription id: %s\n", err.Error()))
 			}
@@ -287,7 +294,7 @@ func updateSubscriptionCommand() *cobra.Command {
 				Id: id.Uint64(),
 			})
 			if err != nil {
-				cmdFailedf(cmd, "get subscription %s error: %s", subscriptionIDStr, err)
+				cmdFailedf(cmd, "get subscription %s error: %s", idStr, Error(err))
 			}
 			var change bool
 			if sink != "" && sink != sub.Sink {
@@ -352,32 +359,39 @@ func updateSubscriptionCommand() *cobra.Command {
 					Sink:           sub.Sink,
 					SinkCredential: sub.SinkCredential,
 					Protocol:       sub.Protocol,
-					EventBus:       sub.EventBus,
+					NamespaceId:    sub.NamespaceId,
+					EventbusId:     sub.EventbusId,
 					Transformer:    sub.Transformer,
 					Name:           sub.Name,
 					Description:    sub.Description,
 				},
 			})
 			if err != nil {
-				cmdFailedf(cmd, "update subscription failed: %s", err)
+				cmdFailedf(cmd, "update subscription failed: %s", Error(err))
 			}
 			printSubscription(cmd, false, true, true, res)
 		},
 	}
-	cmd.Flags().StringVar(&subscriptionIDStr, "id", "", "subscription id to update")
+	cmd.Flags().StringVar(&idStr, "id", "", "subscription id to update")
 	cmd.Flags().StringVar(&sink, "sink", "", "the event you want to send to")
 	cmd.Flags().StringVar(&filters, "filters", "", "filter event you interested, JSON format required")
 	cmd.Flags().StringVar(&transformer, "transformer", "", "transformer, JSON format required")
 	cmd.Flags().Int32Var(&rateLimit, "rate-limit", -1, "max event number pushing to sink per second, 0 means unlimited")
-	cmd.Flags().StringVar(&subProtocol, "protocol", "", "protocol,http or aws-lambda or gcloud-functions or grpc")
+	cmd.Flags().StringVar(&subProtocol, "protocol", "",
+		"protocol,http or aws-lambda or gcloud-functions or grpc")
 	cmd.Flags().StringVar(&sinkCredentialType, "credential-type", "", "sink credential type: aws or gcloud")
-	cmd.Flags().StringVar(&sinkCredential, "credential", "", "sink credential info, JSON format or @file")
-	cmd.Flags().Int32Var(&deliveryTimeout, "delivery-timeout", -1, "event delivery to sink timeout by millisecond, 0 means using server-side default value: 5s")
-	cmd.Flags().Int32Var(&maxRetryAttempts, "max-retry-attempts", -1, "event delivery fail max retry attempts")
+	cmd.Flags().StringVar(&sinkCredential, "credential", "",
+		"sink credential info, JSON format or @file")
+	cmd.Flags().Int32Var(&deliveryTimeout, "delivery-timeout", -1,
+		"event delivery to sink timeout by millisecond, 0 means using server-side default value: 5s")
+	cmd.Flags().Int32Var(&maxRetryAttempts, "max-retry-attempts", -1,
+		"event delivery fail max retry attempts")
 	cmd.Flags().StringVar(&subscriptionName, "name", "", "subscription name")
 	cmd.Flags().StringVar(&description, "description", "", "subscription description")
-	cmd.Flags().StringVar(&orderedPushEventStr, "ordered-event", "", "whether push the event with ordered, true of false")
-	cmd.Flags().StringVar(&disableDeadLetterStr, "disable-dead-letter", "", "whether disable the dead letter, true of false")
+	cmd.Flags().StringVar(&orderedPushEventStr, "ordered-event", "",
+		"whether push the event with ordered, true of false")
+	cmd.Flags().StringVar(&disableDeadLetterStr, "disable-dead-letter", "",
+		"whether disable the dead letter, true of false")
 	return cmd
 }
 
@@ -386,7 +400,7 @@ func deleteSubscriptionCommand() *cobra.Command {
 		Use:   "delete",
 		Short: "delete a subscription",
 		Run: func(cmd *cobra.Command, args []string) {
-			id, err := vanus.NewIDFromString(subscriptionIDStr)
+			id, err := vanus.NewIDFromString(idStr)
 			if err != nil {
 				cmdFailedWithHelpNotice(cmd, fmt.Sprintf("invalid subscription id: %s\n", err.Error()))
 			}
@@ -395,26 +409,26 @@ func deleteSubscriptionCommand() *cobra.Command {
 				Id: id.Uint64(),
 			})
 			if err != nil {
-				cmdFailedf(cmd, "delete subscription failed: %s", err)
+				cmdFailedf(cmd, "delete subscription failed: %s", Error(err))
 			}
 
 			if IsFormatJSON(cmd) {
-				data, _ := json.Marshal(map[string]interface{}{"subscription_id": subscriptionIDStr})
+				data, _ := json.Marshal(map[string]interface{}{"subscription_id": idStr})
 				color.Green(string(data))
 			} else {
 				t := table.NewWriter()
 				t.AppendHeader(table.Row{"subscription_id"})
-				t.AppendRow(table.Row{subscriptionIDStr})
+				t.AppendRow(table.Row{idStr})
 				t.SetColumnConfigs([]table.ColumnConfig{
 					{Number: 1, Align: text.AlignCenter, AlignHeader: text.AlignCenter},
 				})
 				t.SetOutputMirror(os.Stdout)
 				t.Render()
 			}
-			color.Green("delete subscription: %d success\n", subscriptionIDStr)
+			color.Green("delete subscription: %d success\n", idStr)
 		},
 	}
-	cmd.Flags().StringVar(&subscriptionIDStr, "id", "", "subscription id to deleting")
+	cmd.Flags().StringVar(&idStr, "id", "", "subscription id to deleting")
 	return cmd
 }
 
@@ -423,7 +437,7 @@ func resumeSubscriptionCommand() *cobra.Command {
 		Use:   "resume",
 		Short: "resume a subscription",
 		Run: func(cmd *cobra.Command, args []string) {
-			id, err := vanus.NewIDFromString(subscriptionIDStr)
+			id, err := vanus.NewIDFromString(idStr)
 			if err != nil {
 				cmdFailedWithHelpNotice(cmd, fmt.Sprintf("invalid subscription id: %s\n", err.Error()))
 			}
@@ -432,26 +446,26 @@ func resumeSubscriptionCommand() *cobra.Command {
 				Id: id.Uint64(),
 			})
 			if err != nil {
-				cmdFailedf(cmd, "resume subscription failed: %s", err)
+				cmdFailedf(cmd, "resume subscription failed: %s", Error(err))
 			}
 
 			if IsFormatJSON(cmd) {
-				data, _ := json.Marshal(map[string]interface{}{"subscription_id": subscriptionIDStr})
+				data, _ := json.Marshal(map[string]interface{}{"subscription_id": idStr})
 				color.Green(string(data))
 			} else {
 				t := table.NewWriter()
 				t.AppendHeader(table.Row{"subscription_id"})
-				t.AppendRow(table.Row{subscriptionIDStr})
+				t.AppendRow(table.Row{idStr})
 				t.SetColumnConfigs([]table.ColumnConfig{
 					{Number: 1, Align: text.AlignCenter, AlignHeader: text.AlignCenter},
 				})
 				t.SetOutputMirror(os.Stdout)
 				t.Render()
 			}
-			color.Green("resume subscription: %d success\n", subscriptionIDStr)
+			color.Green("resume subscription: %d success\n", idStr)
 		},
 	}
-	cmd.Flags().StringVar(&subscriptionIDStr, "id", "", "subscription id to resume")
+	cmd.Flags().StringVar(&idStr, "id", "", "subscription id to resume")
 	return cmd
 }
 
@@ -460,7 +474,7 @@ func disableSubscriptionCommand() *cobra.Command {
 		Use:   "disable",
 		Short: "disable a subscription",
 		Run: func(cmd *cobra.Command, args []string) {
-			id, err := vanus.NewIDFromString(subscriptionIDStr)
+			id, err := vanus.NewIDFromString(idStr)
 			if err != nil {
 				cmdFailedWithHelpNotice(cmd, fmt.Sprintf("invalid subscription id: %s\n", err.Error()))
 			}
@@ -469,26 +483,26 @@ func disableSubscriptionCommand() *cobra.Command {
 				Id: id.Uint64(),
 			})
 			if err != nil {
-				cmdFailedf(cmd, "disable subscription failed: %s", err)
+				cmdFailedf(cmd, "disable subscription failed: %s", Error(err))
 			}
 
 			if IsFormatJSON(cmd) {
-				data, _ := json.Marshal(map[string]interface{}{"subscription_id": subscriptionIDStr})
+				data, _ := json.Marshal(map[string]interface{}{"subscription_id": idStr})
 				color.Green(string(data))
 			} else {
 				t := table.NewWriter()
 				t.AppendHeader(table.Row{"subscription_id"})
-				t.AppendRow(table.Row{subscriptionIDStr})
+				t.AppendRow(table.Row{idStr})
 				t.SetColumnConfigs([]table.ColumnConfig{
 					{Number: 1, Align: text.AlignCenter, AlignHeader: text.AlignCenter},
 				})
 				t.SetOutputMirror(os.Stdout)
 				t.Render()
 			}
-			color.Green("disable subscription: %d success\n", subscriptionIDStr)
+			color.Green("disable subscription: %d success\n", idStr)
 		},
 	}
-	cmd.Flags().StringVar(&subscriptionIDStr, "id", "", "subscription id to disable")
+	cmd.Flags().StringVar(&idStr, "id", "", "subscription id to disable")
 	return cmd
 }
 
@@ -497,19 +511,23 @@ func resetOffsetCommand() *cobra.Command {
 		Use:   "reset-offset",
 		Short: "reset offset a subscription",
 		Run: func(cmd *cobra.Command, args []string) {
-			id, err := vanus.NewIDFromString(subscriptionIDStr)
+			id, err := vanus.NewIDFromString(idStr)
 			if err != nil {
 				cmdFailedWithHelpNotice(cmd, fmt.Sprintf("invalid subscription id: %s\n", err.Error()))
 			}
-			if offsetTimestamp == 0 {
-				cmdFailedf(cmd, "reset offset timestamp must gt 0")
+			if from == "" {
+				cmdFailedf(cmd, "reset offset timestamp")
+			}
+			t, err := time.Parse(time.RFC3339, from)
+			if err != nil {
+				cmdFailedf(cmd, fmt.Sprintf("failed to parse time, time format must be RFC3339"))
 			}
 			res, err := client.ResetOffsetToTimestamp(context.Background(), &ctrlpb.ResetOffsetToTimestampRequest{
 				SubscriptionId: id.Uint64(),
-				Timestamp:      offsetTimestamp,
+				Timestamp:      uint64(t.UnixMilli()),
 			})
 			if err != nil {
-				cmdFailedf(cmd, "reset offset subscription failed: %s", err)
+				cmdFailedf(cmd, "reset offset subscription failed: %s", Error(err))
 			}
 			data, _ := json.MarshalIndent(res.Offsets, "", "  ")
 			if IsFormatJSON(cmd) {
@@ -518,7 +536,7 @@ func resetOffsetCommand() *cobra.Command {
 				t := table.NewWriter()
 				t.AppendHeader(table.Row{"subscription_id", "filters"})
 				t.AppendSeparator()
-				t.AppendRow(table.Row{subscriptionIDStr, string(data)})
+				t.AppendRow(table.Row{idStr, string(data)})
 				t.SetColumnConfigs([]table.ColumnConfig{
 					{Number: 1, VAlign: text.VAlignMiddle, AlignHeader: text.AlignCenter},
 					{Number: 2, VAlign: text.VAlignMiddle, AlignHeader: text.AlignCenter},
@@ -526,11 +544,11 @@ func resetOffsetCommand() *cobra.Command {
 				t.SetOutputMirror(os.Stdout)
 				t.Render()
 			}
-			color.Green("reset offset by subscription: %s success\n", subscriptionIDStr)
+			color.Green("reset offset by subscription: %s success\n", idStr)
 		},
 	}
-	cmd.Flags().StringVar(&subscriptionIDStr, "id", "", "subscription id to disable")
-	cmd.Flags().Uint64Var(&offsetTimestamp, "timestamp", 0, "reset offset to UTC second")
+	cmd.Flags().StringVar(&idStr, "id", "", "subscription id to disable")
+	cmd.Flags().StringVar(&from, "time", "", "reset offset to time, format is RFC3339")
 	return cmd
 }
 
@@ -539,7 +557,7 @@ func getSubscriptionCommand() *cobra.Command {
 		Use:   "info",
 		Short: "get the subscription info ",
 		Run: func(cmd *cobra.Command, args []string) {
-			id, err := vanus.NewIDFromString(subscriptionIDStr)
+			id, err := vanus.NewIDFromString(idStr)
 			if err != nil {
 				cmdFailedWithHelpNotice(cmd, fmt.Sprintf("invalid subscription id: %s\n", err.Error()))
 			}
@@ -548,12 +566,12 @@ func getSubscriptionCommand() *cobra.Command {
 				Id: id.Uint64(),
 			})
 			if err != nil {
-				cmdFailedf(cmd, "get subscription info failed: %s", err)
+				cmdFailedf(cmd, "get subscription info failed: %s", Error(err))
 			}
 			printSubscription(cmd, false, true, true, res)
 		},
 	}
-	cmd.Flags().StringVar(&subscriptionIDStr, "id", "", "subscription id")
+	cmd.Flags().StringVar(&idStr, "id", "", "subscription id")
 	return cmd
 }
 
@@ -562,18 +580,26 @@ func listSubscriptionCommand() *cobra.Command {
 		Use:   "list",
 		Short: "list the subscription ",
 		Run: func(cmd *cobra.Command, args []string) {
-			res, err := client.ListSubscription(context.Background(), &ctrlpb.ListSubscriptionRequest{
-				Eventbus: eventbus,
-				Name:     subscriptionName,
-			})
+			request := &ctrlpb.ListSubscriptionRequest{
+				Name: subscriptionName,
+			}
+			if !all || namespace != "" {
+				request.NamespaceId = mustGetNamespaceID(namespace).Uint64()
+			}
+			if eventbus != "" {
+				request.EventbusId = mustGetEventbusID(namespace, eventbus).Uint64()
+			}
+			res, err := client.ListSubscription(context.Background(), request)
 			if err != nil {
-				cmdFailedf(cmd, "list subscription failed: %s", err)
+				cmdFailedf(cmd, "list subscription failed: %s", Error(err))
 			}
 			printSubscription(cmd, true, false, false, res.Subscription...)
 		},
 	}
+	cmd.Flags().StringVar(&namespace, "namespace", "", "namespace name, default name is default")
 	cmd.Flags().StringVar(&eventbus, "eventbus", "", "eventbus name to consuming")
 	cmd.Flags().StringVar(&subscriptionName, "name", "", "subscription name")
+	cmd.Flags().BoolVarP(&all, "all", "A", false, "list all namespace subscription")
 	return cmd
 }
 
@@ -616,8 +642,10 @@ func printSubscription(cmd *cobra.Command, showNo, showFilters, showTransformer 
 	}
 }
 
-var subscriptionHeaders = []interface{}{"id", "name", "disable", "eventbus", "sink", "description", "protocol", "sinkCredential",
-	"config", "offsets", "filter", "transformer", "created_at", "updated_at"}
+var subscriptionHeaders = []interface{}{
+	"id", "name", "disable", "eventbus", "namespace", "sink", "description", "protocol", "sinkCredential",
+	"config", "offsets", "filter", "transformer", "created_at", "updated_at",
+}
 
 func getSubscriptionHeader(showNo bool) table.Row {
 	var result []interface{}
@@ -633,7 +661,8 @@ func getSubscriptionRow(sub *meta.Subscription) []interface{} {
 	result = append(result, formatID(sub.Id))
 	result = append(result, sub.Name)
 	result = append(result, sub.Disable)
-	result = append(result, sub.EventBus)
+	result = append(result, formatID(sub.EventbusId))
+	result = append(result, formatID(sub.NamespaceId))
 	result = append(result, sub.Sink)
 	result = append(result, sub.Description)
 

@@ -15,12 +15,10 @@
 package filter
 
 import (
-	"context"
-
-	"github.com/linkall-labs/vanus/internal/primitive"
-	"github.com/linkall-labs/vanus/observability/log"
-
 	ce "github.com/cloudevents/sdk-go/v2"
+	"github.com/vanus-labs/vanus/observability/log"
+
+	"github.com/vanus-labs/vanus/internal/primitive"
 )
 
 func extractFilter(subscriptionFilter *primitive.SubscriptionFilter) Filter {
@@ -56,9 +54,9 @@ func extractFilters(subscriptionFilters []*primitive.SubscriptionFilter) []Filte
 	for _, subscriptionFilter := range subscriptionFilters {
 		tf := extractFilter(subscriptionFilter)
 		if tf == nil {
-			log.Info(context.Background(), "get filter is nil will ignore the filter", map[string]interface{}{
-				"filter": subscriptionFilter,
-			})
+			log.Info().
+				Interface("filter", subscriptionFilter).
+				Msg("get filter is nil will ignore the filter")
 			continue
 		}
 		filters = append(filters, tf)

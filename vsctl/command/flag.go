@@ -32,6 +32,7 @@ var (
 	eventCreateTime   string
 
 	// for both of eventbus and subscription.
+	namespace           string
 	eventbus            string
 	eventlogID          uint64
 	eventlogNum         int32
@@ -40,7 +41,6 @@ var (
 	transformer         string
 	rateLimit           int32
 	from                string
-	subscriptionIDStr   string
 	description         string
 	subscriptionName    string
 	disableSubscription bool
@@ -65,7 +65,6 @@ var (
 	clusterVersion      string
 	showInstallableList bool
 	showUpgradeableList bool
-	controllerReplicas  int32
 	storeReplicas       int32
 	triggerReplicas     int32
 
@@ -80,6 +79,11 @@ var (
 
 	startOffset uint64
 	endOffset   uint64
+
+	userIdentifier string
+	idStr          string
+	role           string
+	all            bool
 )
 
 const (

@@ -15,25 +15,25 @@
 package eventlog
 
 import (
-	// standard libraries
+	// standard libraries.
 	"context"
 	"io"
 	"sort"
 	"sync"
 	"time"
 
-	// third-party libraries
+	// third-party libraries.
 	"go.opentelemetry.io/otel/trace"
 
-	// first-party libraries
-	"github.com/linkall-labs/vanus/observability/log"
-	"github.com/linkall-labs/vanus/observability/tracing"
-	"github.com/linkall-labs/vanus/pkg/errors"
-	"github.com/linkall-labs/vanus/proto/pkg/cloudevents"
+	// first-party libraries.
+	"github.com/vanus-labs/vanus/observability/log"
+	"github.com/vanus-labs/vanus/observability/tracing"
+	"github.com/vanus-labs/vanus/pkg/errors"
+	"github.com/vanus-labs/vanus/proto/pkg/cloudevents"
 
-	// this project
-	el "github.com/linkall-labs/vanus/client/internal/vanus/eventlog"
-	"github.com/linkall-labs/vanus/client/pkg/record"
+	// this project.
+	el "github.com/vanus-labs/vanus/client/internal/vanus/eventlog"
+	"github.com/vanus-labs/vanus/client/pkg/record"
 )
 
 const (
@@ -42,7 +42,7 @@ const (
 	pollingPostSpan   = 100 // in milliseconds.
 )
 
-func NewEventLog(cfg *el.Config) Eventlog {
+func NewEventlog(cfg *el.Config) Eventlog {
 	l := &eventlog{
 		cfg:         cfg,
 		nameService: el.NewNameService(cfg.Endpoints),
@@ -58,9 +58,8 @@ func NewEventLog(cfg *el.Config) Eventlog {
 		for {
 			r, ok := <-ch
 			if !ok {
-				log.Debug(context.Background(), "eventlog quits writable watcher", map[string]interface{}{
-					"eventlog": l.cfg.ID,
-				})
+				log.Debug().Uint64("eventlog", l.cfg.ID).
+					Msg("eventlog quits writable watcher")
 				break
 			}
 
@@ -80,9 +79,9 @@ func NewEventLog(cfg *el.Config) Eventlog {
 		for {
 			rs, ok := <-ch
 			if !ok {
-				log.Debug(context.Background(), "eventlog quits readable watcher", map[string]interface{}{
-					"eventlog": l.cfg.ID,
-				})
+				log.Debug().
+					Uint64("eventlog", l.cfg.ID).
+					Msg("eventlog quits readable watcher")
 				break
 			}
 			ctx, span := l.tracer.Start(context.Background(), "updateReadableSegmentsTask")
@@ -113,7 +112,7 @@ type eventlog struct {
 	tracer           *tracing.Tracer
 }
 
-// make sure eventlog implements eventlog.EventLog.
+// make sure eventlog implements Eventlog.
 var _ Eventlog = (*eventlog)(nil)
 
 func (l *eventlog) ID() uint64 {
@@ -220,9 +219,7 @@ func (l *eventlog) updateWritableSegment(ctx context.Context, r *record.Segment)
 
 	segment, err := newSegment(ctx, r, true)
 	if err != nil {
-		log.Error(context.Background(), "new segment failed", map[string]interface{}{
-			log.KeyError: err,
-		})
+		log.Error().Err(err).Msg("new segment failed")
 		return
 	}
 
@@ -280,9 +277,9 @@ func (l *eventlog) updateReadableSegments(ctx context.Context, rs []*record.Segm
 		}
 		if err != nil {
 			// FIXME: create or update segment failed
-			log.Debug(context.Background(), "update readable segment failed", map[string]interface{}{
-				"segment": segment.id,
-			})
+			log.Debug().
+				Interface("segment", segment).
+				Msg("update readable segment failed")
 			continue
 		}
 		segments = append(segments, segment)
@@ -333,9 +330,7 @@ func (l *eventlog) refreshReadableSegments(ctx context.Context) {
 	_ = l.readableWatcher.Refresh(ctx)
 }
 
-var (
-	_ LogWriter = &logWriter{}
-)
+var _ LogWriter = &logWriter{}
 
 // logWriter is the writer of eventlog.
 //
@@ -347,25 +342,20 @@ type logWriter struct {
 }
 
 func (w *logWriter) Append(ctx context.Context, events *cloudevents.CloudEventBatch) (offs []int64, err error) {
-	retryTimes := defaultRetryTimes
-	for i := 1; i <= retryTimes; i++ {
-		offsets, err := w.doAppend(ctx, events)
+	for i := 1; i <= defaultRetryTimes; i++ {
+		offs, err = w.doAppend(ctx, events)
 		if err == nil {
-			return offsets, nil
+			return offs, nil
 		}
 		if !errors.Is(err, errors.ErrSegmentFull) {
-			log.Error(ctx, "logwriter append failed", map[string]interface{}{
-				log.KeyError: err,
-			})
+			log.Error(ctx).Err(err).Msg("log-writer append failed")
 			return nil, err
 		}
-		log.Debug(ctx, "logwriter append failed cause segment full", map[string]interface{}{
-			log.KeyError: err,
-			"offsets":    offsets,
-			"retry_time": i,
-		})
+		log.Debug(ctx).
+			Int("retry_time", i).
+			Err(err).Msg("log-writer append failed cause segment full")
 	}
-	return nil, errors.ErrUnknown
+	return nil, err
 }
 
 func (w *logWriter) Log() Eventlog {
